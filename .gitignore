@@ -1,0 +1,173 @@
+# ============================================================
+# AVF-TRPDE - Git Ignore
+# ============================================================
+
+# ------------------------------------------------------------
+# Environment & Secrets
+# ------------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+
+# API keys / credentials
+*.key
+*.pem
+*.secret
+secrets/
+credentials/
+
+# ------------------------------------------------------------
+# Python
+# ------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ------------------------------------------------------------
+# Testing / Coverage
+# ------------------------------------------------------------
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ------------------------------------------------------------
+# Code Quality
+# ------------------------------------------------------------
+
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ------------------------------------------------------------
+# Jupyter
+# ------------------------------------------------------------
+
+.ipynb_checkpoints/
+
+# ------------------------------------------------------------
+# OS
+# ------------------------------------------------------------
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------------------------------------------------------------
+# IDE / Editors
+# ------------------------------------------------------------
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ------------------------------------------------------------
+# AVF-TRPDE Data
+# ------------------------------------------------------------
+
+# Raw market data
+data/raw/*
+
+# Intraday market data
+data/intraday/*
+
+# Processed/generated datasets
+data/processed/*
+data/realized/*
+data/samples/*
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/intraday/.gitkeep
+!data/processed/.gitkeep
+!data/realized/.gitkeep
+!data/samples/.gitkeep
+
+# ------------------------------------------------------------
+# DuckDB
+# ------------------------------------------------------------
+
+storage/duckdb/*
+!storage/duckdb/.gitkeep
+
+# ------------------------------------------------------------
+# Experiment Outputs
+# ------------------------------------------------------------
+
+experiments/*
+
+# Keep experiment directory structure
+!experiments/baseline/.gitkeep
+!experiments/xgboost/.gitkeep
+!experiments/regime_xgboost/.gitkeep
+!experiments/ablation/.gitkeep
+!experiments/walk_forward/.gitkeep
+!experiments/risk/.gitkeep
+!experiments/portfolio/.gitkeep
+!experiments/stress/.gitkeep
+!experiments/statistical_tests/.gitkeep
+
+# ------------------------------------------------------------
+# Generated Reports / Figures
+# ------------------------------------------------------------
+
+reports/research/*
+reports/risk/*
+reports/portfolio/*
+reports/figures/*
+
+!reports/research/.gitkeep
+!reports/risk/.gitkeep
+!reports/portfolio/.gitkeep
+!reports/figures/.gitkeep
+
+# ------------------------------------------------------------
+# Runtime / Logs
+# ------------------------------------------------------------
+
+*.log
+logs/
+tmp/
+temp/
+
+# ------------------------------------------------------------
+# Frontend
+# ------------------------------------------------------------
+
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Frontend environment files
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ------------------------------------------------------------
+# Local Configuration
+# ------------------------------------------------------------
+
+*.local
