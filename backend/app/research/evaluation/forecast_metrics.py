@@ -18,165 +18,160 @@ class ForecastMetrics:
     rmse: float
     qlike: float
 
+    def as_dict(self) -> dict[str, float]:
+        """Return metrics as a dictionary."""
+        return {
+            "mae": self.mae,
+            "rmse": self.rmse,
+            "qlike": self.qlike,
+        }
+
 
 def calculate_mae(
-    actual: pd.Series | np.ndarray,
-    forecast: pd.Series | np.ndarray,
+    actual: np.ndarray | pd.Series | list[float],
+    forecast: np.ndarray | pd.Series | list[float],
 ) -> float:
     """
     Calculate Mean Absolute Error.
 
     MAE = mean(|y - y_hat|)
     """
-
-    y_true, y_pred = _prepare_inputs(
+    actual_array, forecast_array = _prepare_inputs(
         actual,
         forecast,
+        require_positive_forecast=False,
     )
 
     return float(
         np.mean(
-            np.abs(y_true - y_pred)
+            np.abs(actual_array - forecast_array)
         )
     )
 
 
 def calculate_rmse(
-    actual: pd.Series | np.ndarray,
-    forecast: pd.Series | np.ndarray,
+    actual: np.ndarray | pd.Series | list[float],
+    forecast: np.ndarray | pd.Series | list[float],
 ) -> float:
     """
     Calculate Root Mean Squared Error.
 
     RMSE = sqrt(mean((y - y_hat)^2))
     """
-
-    y_true, y_pred = _prepare_inputs(
+    actual_array, forecast_array = _prepare_inputs(
         actual,
         forecast,
+        require_positive_forecast=False,
     )
 
     return float(
         np.sqrt(
             np.mean(
-                (y_true - y_pred) ** 2
+                np.square(actual_array - forecast_array)
             )
         )
     )
 
 
 def calculate_qlike(
-    actual: pd.Series | np.ndarray,
-    forecast: pd.Series | np.ndarray,
+    actual: np.ndarray | pd.Series | list[float],
+    forecast: np.ndarray | pd.Series | list[float],
 ) -> float:
     """
-    Calculate QLIKE loss.
+    Calculate QLIKE loss for volatility forecasts.
 
     QLIKE = mean(
-        y / y_hat
-        - log(y / y_hat)
+        actual / forecast
+        - log(actual / forecast)
         - 1
     )
 
-    Actual and forecast volatility/variance inputs must be
+    Both actual and forecast volatility values must be
     strictly positive.
     """
-
-    y_true, y_pred = _prepare_inputs(
+    actual_array, forecast_array = _prepare_inputs(
         actual,
         forecast,
+        require_positive_forecast=True,
     )
 
-    if (y_true <= 0).any():
+    if np.any(actual_array <= 0):
         raise ForecastMetricError(
-            "QLIKE requires actual values greater than zero."
+            "Actual volatility values must be strictly positive "
+            "for QLIKE."
         )
 
-    if (y_pred <= 0).any():
-        raise ForecastMetricError(
-            "QLIKE requires forecast values greater than zero."
-        )
+    ratio = actual_array / forecast_array
 
-    ratio = y_true / y_pred
-
-    losses = (
+    qlike_values = (
         ratio
         - np.log(ratio)
         - 1.0
     )
 
-    if not np.isfinite(losses).all():
-        raise ForecastMetricError(
-            "QLIKE calculation produced non-finite values."
-        )
-
-    return float(
-        np.mean(losses)
-    )
+    return float(np.mean(qlike_values))
 
 
 def calculate_forecast_metrics(
-    actual: pd.Series | np.ndarray,
-    forecast: pd.Series | np.ndarray,
+    actual: np.ndarray | pd.Series | list[float],
+    forecast: np.ndarray | pd.Series | list[float],
 ) -> ForecastMetrics:
-    """Calculate MAE, RMSE, and QLIKE together."""
+    """
+    Calculate all locked forecast evaluation metrics.
 
-    y_true, y_pred = _prepare_inputs(
+    Returns:
+        ForecastMetrics containing MAE, RMSE, and QLIKE.
+    """
+    mae = calculate_mae(
+        actual,
+        forecast,
+    )
+
+    rmse = calculate_rmse(
+        actual,
+        forecast,
+    )
+
+    qlike = calculate_qlike(
         actual,
         forecast,
     )
 
     return ForecastMetrics(
-        mae=calculate_mae(
-            y_true,
-            y_pred,
-        ),
-        rmse=calculate_rmse(
-            y_true,
-            y_pred,
-        ),
-        qlike=calculate_qlike(
-            y_true,
-            y_pred,
-        ),
+        mae=mae,
+        rmse=rmse,
+        qlike=qlike,
     )
 
 
 def evaluate_forecast_dataframe(
     dataframe: pd.DataFrame,
     *,
-    actual_column: str,
-    forecast_column: str,
+    actual_column: str = "actual",
+    forecast_column: str = "forecast",
 ) -> ForecastMetrics:
     """
-    Evaluate a forecast directly from a dataframe.
+    Calculate forecast metrics from a DataFrame.
 
-    Rows with missing actual or forecast values are rejected rather
-    than silently removed, because silent removal can hide problems
-    in an out-of-sample evaluation.
+    The DataFrame must contain the specified actual and
+    forecast columns.
     """
-
-    if not isinstance(
-        dataframe,
-        pd.DataFrame,
-    ):
+    if not isinstance(dataframe, pd.DataFrame):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
         )
 
     if dataframe.empty:
         raise ForecastMetricError(
-            "dataframe must not be empty."
+            "Forecast dataframe must not be empty."
         )
-
-    required_columns = (
-        actual_column,
-        forecast_column,
-    )
 
     missing_columns = [
         column
-        for column in required_columns
+        for column in (
+            actual_column,
+            forecast_column,
+        )
         if column not in dataframe.columns
     ]
 
@@ -186,90 +181,146 @@ def evaluate_forecast_dataframe(
             + ", ".join(missing_columns)
         )
 
-    actual = dataframe[
-        actual_column
-    ]
-
-    forecast = dataframe[
-        forecast_column
-    ]
-
     return calculate_forecast_metrics(
-        actual,
-        forecast,
+        actual=dataframe[actual_column],
+        forecast=dataframe[forecast_column],
+    )
+
+
+def compare_forecasts(
+    actual: np.ndarray | pd.Series | list[float],
+    forecasts: dict[str, np.ndarray | pd.Series | list[float]],
+) -> pd.DataFrame:
+    """
+    Calculate MAE, RMSE, and QLIKE for multiple forecasts.
+
+    Args:
+        actual: Realized volatility observations.
+        forecasts: Mapping of model name to forecast values.
+
+    Returns:
+        DataFrame containing one row per model.
+    """
+    if not forecasts:
+        raise ForecastMetricError(
+            "At least one forecast is required."
+        )
+
+    rows: list[dict[str, float | str]] = []
+
+    for model_name, forecast in forecasts.items():
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise ForecastMetricError(
+                "Forecast model names must be non-empty strings."
+            )
+
+        metrics = calculate_forecast_metrics(
+            actual=actual,
+            forecast=forecast,
+        )
+
+        rows.append(
+            {
+                "model": model_name,
+                "mae": metrics.mae,
+                "rmse": metrics.rmse,
+                "qlike": metrics.qlike,
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "model",
+            "mae",
+            "rmse",
+            "qlike",
+        ],
     )
 
 
 def _prepare_inputs(
-    actual: pd.Series | np.ndarray,
-    forecast: pd.Series | np.ndarray,
+    actual: np.ndarray | pd.Series | list[float],
+    forecast: np.ndarray | pd.Series | list[float],
+    *,
+    require_positive_forecast: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Validate and convert metric inputs."""
+    """Validate and convert metric inputs to float arrays."""
 
-    y_true = _to_numpy(
+    actual_array = _to_float_array(
         actual,
-        "actual",
+        name="actual",
     )
 
-    y_pred = _to_numpy(
+    forecast_array = _to_float_array(
         forecast,
-        "forecast",
+        name="forecast",
     )
 
-    if y_true.ndim != 1:
+    if len(actual_array) != len(forecast_array):
         raise ForecastMetricError(
-            "actual must be one-dimensional."
+            "Actual and forecast arrays must have the same length."
         )
 
-    if y_pred.ndim != 1:
+    if len(actual_array) == 0:
         raise ForecastMetricError(
-            "forecast must be one-dimensional."
+            "Actual and forecast arrays must not be empty."
         )
 
-    if len(y_true) != len(y_pred):
+    if require_positive_forecast and np.any(
+        forecast_array <= 0
+    ):
         raise ForecastMetricError(
-            "actual and forecast must contain the same "
-            "number of observations."
+            "Forecast volatility values must be strictly positive "
+            "for QLIKE."
         )
 
-    if len(y_true) == 0:
-        raise ForecastMetricError(
-            "actual and forecast must not be empty."
-        )
-
-    if not np.isfinite(y_true).all():
-        raise ForecastMetricError(
-            "actual contains non-finite values."
-        )
-
-    if not np.isfinite(y_pred).all():
-        raise ForecastMetricError(
-            "forecast contains non-finite values."
-        )
-
-    return y_true, y_pred
+    return actual_array, forecast_array
 
 
-def _to_numpy(
-    values: pd.Series | np.ndarray,
+def _to_float_array(
+    values: np.ndarray | pd.Series | list[float],
+    *,
     name: str,
 ) -> np.ndarray:
-    """Convert supported input types to a one-dimensional NumPy array."""
+    """Convert metric input to a validated one-dimensional array."""
 
     if isinstance(values, pd.Series):
-        array = values.to_numpy(
-            dtype=float
-        )
+        array = values.to_numpy(dtype=float)
 
     elif isinstance(values, np.ndarray):
-        array = np.asarray(
-            values,
-            dtype=float,
-        )
+        try:
+            array = values.astype(float, copy=False)
+        except (TypeError, ValueError) as exc:
+            raise ForecastMetricError(
+                f"{name} contains non-numeric values."
+            ) from exc
+
+    elif isinstance(values, list):
+        try:
+            array = np.asarray(
+                values,
+                dtype=float,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ForecastMetricError(
+                f"{name} contains non-numeric values."
+            ) from exc
 
     else:
         raise TypeError(
-            f"{name} must be a pandas.Series or numpy.ndarray."
+            f"{name} must be a numpy array, pandas Series, "
+            "or list of floats."
+        )
+
+    if array.ndim != 1:
+        raise ForecastMetricError(
+            f"{name} must be one-dimensional."
+        )
+
+    if not np.all(np.isfinite(array)):
+        raise ForecastMetricError(
+            f"{name} contains NaN or infinite values."
         )
 
     return array

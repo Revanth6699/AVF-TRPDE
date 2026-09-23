@@ -1,503 +1,518 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable
 
 import numpy as np
 
 
 class BootstrapError(ValueError):
-    """Raised when bootstrap inputs or configuration are invalid."""
+    """Raised when bootstrap estimation cannot be performed."""
 
 
 @dataclass(frozen=True)
-class BootstrapConfig:
-    """Configuration for bootstrap estimation."""
-
-    samples: int = 2000
-    confidence_level: float = 0.95
-    block_length: int = 5
-    random_state: int = 42
-
-
-@dataclass(frozen=True)
-class BootstrapCI:
-    """Bootstrap confidence interval."""
+class BootstrapResult:
+    """Bootstrap estimate and confidence interval."""
 
     estimate: float
-    lower: float
-    upper: float
+    standard_error: float
     confidence_level: float
-    samples: int
+    lower_bound: float
+    upper_bound: float
+    bootstrap_samples: int
+
+    def as_dict(self) -> dict[str, float | int]:
+        """Return the result as a dictionary."""
+        return {
+            "estimate": self.estimate,
+            "standard_error": self.standard_error,
+            "confidence_level": self.confidence_level,
+            "lower_bound": self.lower_bound,
+            "upper_bound": self.upper_bound,
+            "bootstrap_samples": self.bootstrap_samples,
+        }
 
 
-@dataclass(frozen=True)
-class BootstrapDifference:
-    """Bootstrap confidence interval for a paired difference."""
-
-    estimate: float
-    lower: float
-    upper: float
-    confidence_level: float
-    samples: int
-
-
-def bootstrap_mean(
-    values: Sequence[float] | np.ndarray,
+def bootstrap_confidence_interval(
+    values: np.ndarray | list[float],
     *,
-    config: BootstrapConfig | None = None,
-) -> BootstrapCI:
+    statistic: Callable[[np.ndarray], float] = np.mean,
+    confidence_level: float = 0.95,
+    n_bootstrap: int = 2_000,
+    random_state: int | None = 42,
+) -> BootstrapResult:
     """
-    Estimate the mean and its bootstrap confidence interval.
+    Estimate a statistic and its bootstrap confidence interval.
+
+    The percentile bootstrap is used.
+
+    Args:
+        values:
+            One-dimensional observations.
+        statistic:
+            Statistic calculated on the observations.
+        confidence_level:
+            Confidence level between 0 and 1.
+        n_bootstrap:
+            Number of bootstrap resamples.
+        random_state:
+            Seed for deterministic results. None disables fixed seeding.
+
+    Returns:
+        BootstrapResult containing the point estimate and
+        percentile confidence interval.
     """
+    array = _to_array(values)
 
-    data = _validate_vector(values)
-    cfg = config or BootstrapConfig()
-
-    _validate_config(cfg)
-
-    statistic = lambda sample: float(np.mean(sample))
-
-    estimate = statistic(data)
-
-    bootstrap_statistics = _bootstrap_statistics(
-        data,
-        statistic=statistic,
-        config=cfg,
+    _validate_parameters(
+        confidence_level=confidence_level,
+        n_bootstrap=n_bootstrap,
     )
 
-    lower, upper = _percentile_interval(
-        bootstrap_statistics,
-        confidence_level=cfg.confidence_level,
+    try:
+        estimate = float(statistic(array))
+    except Exception as exc:
+        raise BootstrapError(
+            "Unable to calculate the bootstrap statistic."
+        ) from exc
+
+    if not np.isfinite(estimate):
+        raise BootstrapError(
+            "Bootstrap statistic returned a non-finite value."
+        )
+
+    rng = np.random.default_rng(random_state)
+
+    bootstrap_statistics = np.empty(
+        n_bootstrap,
+        dtype=float,
     )
 
-    return BootstrapCI(
+    observations = len(array)
+
+    for index in range(n_bootstrap):
+        sample = rng.choice(
+            array,
+            size=observations,
+            replace=True,
+        )
+
+        try:
+            value = float(statistic(sample))
+        except Exception as exc:
+            raise BootstrapError(
+                "Bootstrap statistic failed during resampling."
+            ) from exc
+
+        if not np.isfinite(value):
+            raise BootstrapError(
+                "Bootstrap statistic returned a non-finite "
+                "value during resampling."
+            )
+
+        bootstrap_statistics[index] = value
+
+    alpha = 1.0 - confidence_level
+
+    lower_bound = float(
+        np.quantile(
+            bootstrap_statistics,
+            alpha / 2.0,
+        )
+    )
+
+    upper_bound = float(
+        np.quantile(
+            bootstrap_statistics,
+            1.0 - alpha / 2.0,
+        )
+    )
+
+    standard_error = float(
+        np.std(
+            bootstrap_statistics,
+            ddof=1,
+        )
+    )
+
+    return BootstrapResult(
         estimate=estimate,
-        lower=lower,
-        upper=upper,
-        confidence_level=cfg.confidence_level,
-        samples=cfg.samples,
+        standard_error=standard_error,
+        confidence_level=confidence_level,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        bootstrap_samples=n_bootstrap,
     )
 
 
 def bootstrap_metric(
-    values: Sequence[float] | np.ndarray,
-    metric: Callable[[np.ndarray], float],
+    actual: np.ndarray | list[float],
+    forecast: np.ndarray | list[float],
     *,
-    config: BootstrapConfig | None = None,
-) -> BootstrapCI:
+    metric: str = "mae",
+    confidence_level: float = 0.95,
+    n_bootstrap: int = 2_000,
+    random_state: int | None = 42,
+) -> BootstrapResult:
     """
-    Bootstrap an arbitrary scalar metric.
+    Bootstrap a forecast metric.
 
-    The metric must accept a one-dimensional NumPy array and return
-    one finite scalar value.
+    Supported metrics:
+        - mae
+        - rmse
+        - qlike
     """
+    actual_array = _to_array(actual)
+    forecast_array = _to_array(forecast)
 
-    data = _validate_vector(values)
-    cfg = config or BootstrapConfig()
-
-    _validate_config(cfg)
-
-    estimate = _evaluate_metric(
-        metric,
-        data,
+    _validate_matching_lengths(
+        actual_array,
+        forecast_array,
     )
 
-    bootstrap_statistics = _bootstrap_statistics(
-        data,
-        statistic=metric,
-        config=cfg,
-    )
+    metric_name = metric.strip().lower()
 
-    lower, upper = _percentile_interval(
-        bootstrap_statistics,
-        confidence_level=cfg.confidence_level,
-    )
+    if metric_name not in {
+        "mae",
+        "rmse",
+        "qlike",
+    }:
+        raise BootstrapError(
+            "metric must be 'mae', 'rmse', or 'qlike'."
+        )
 
-    return BootstrapCI(
-        estimate=estimate,
-        lower=lower,
-        upper=upper,
-        confidence_level=cfg.confidence_level,
-        samples=cfg.samples,
+    if metric_name == "qlike":
+        if np.any(actual_array <= 0):
+            raise BootstrapError(
+                "Actual values must be strictly positive "
+                "for QLIKE."
+            )
+
+        if np.any(forecast_array <= 0):
+            raise BootstrapError(
+                "Forecast values must be strictly positive "
+                "for QLIKE."
+            )
+
+    def metric_statistic(
+        indices: np.ndarray,
+    ) -> float:
+        sample_actual = actual_array[indices]
+        sample_forecast = forecast_array[indices]
+
+        if metric_name == "mae":
+            return float(
+                np.mean(
+                    np.abs(
+                        sample_actual
+                        - sample_forecast
+                    )
+                )
+            )
+
+        if metric_name == "rmse":
+            return float(
+                np.sqrt(
+                    np.mean(
+                        np.square(
+                            sample_actual
+                            - sample_forecast
+                        )
+                    )
+                )
+            )
+
+        ratio = (
+            sample_actual
+            / sample_forecast
+        )
+
+        return float(
+            np.mean(
+                ratio
+                - np.log(ratio)
+                - 1.0
+            )
+        )
+
+    return _bootstrap_indices(
+        observations=len(actual_array),
+        statistic=metric_statistic,
+        point_estimate=metric_statistic(
+            np.arange(len(actual_array))
+        ),
+        confidence_level=confidence_level,
+        n_bootstrap=n_bootstrap,
+        random_state=random_state,
     )
 
 
 def bootstrap_difference(
-    values_a: Sequence[float] | np.ndarray,
-    values_b: Sequence[float] | np.ndarray,
+    values_a: np.ndarray | list[float],
+    values_b: np.ndarray | list[float],
     *,
-    config: BootstrapConfig | None = None,
-) -> BootstrapDifference:
+    confidence_level: float = 0.95,
+    n_bootstrap: int = 2_000,
+    random_state: int | None = 42,
+) -> BootstrapResult:
     """
-    Bootstrap the mean paired difference between two series.
+    Bootstrap the mean difference between two paired series.
 
-    The two series must be time-aligned and have identical lengths.
+    Difference is defined as:
 
-    The estimated difference is:
-
-        mean(A - B)
+        mean(values_a - values_b)
     """
+    array_a = _to_array(values_a)
+    array_b = _to_array(values_b)
 
-    data_a = _validate_vector(values_a)
-    data_b = _validate_vector(values_b)
+    _validate_matching_lengths(
+        array_a,
+        array_b,
+    )
 
-    if len(data_a) != len(data_b):
-        raise BootstrapError(
-            "values_a and values_b must contain the same number "
-            "of observations."
-        )
+    differences = array_a - array_b
 
-    cfg = config or BootstrapConfig()
-
-    _validate_config(cfg)
-
-    differences = data_a - data_b
-
-    result = bootstrap_mean(
+    return bootstrap_confidence_interval(
         differences,
-        config=cfg,
-    )
-
-    return BootstrapDifference(
-        estimate=result.estimate,
-        lower=result.lower,
-        upper=result.upper,
-        confidence_level=result.confidence_level,
-        samples=result.samples,
-    )
-
-
-def bootstrap_metric_difference(
-    values_a: Sequence[float] | np.ndarray,
-    values_b: Sequence[float] | np.ndarray,
-    metric: Callable[[np.ndarray], float],
-    *,
-    config: BootstrapConfig | None = None,
-) -> BootstrapDifference:
-    """
-    Bootstrap the paired difference between two model metrics.
-
-    Each bootstrap replicate resamples the same time indices for both
-    series, preserving their paired structure.
-    """
-
-    data_a = _validate_vector(values_a)
-    data_b = _validate_vector(values_b)
-
-    if len(data_a) != len(data_b):
-        raise BootstrapError(
-            "values_a and values_b must contain the same number "
-            "of observations."
-        )
-
-    cfg = config or BootstrapConfig()
-
-    _validate_config(cfg)
-
-    estimate = (
-        _evaluate_metric(metric, data_a)
-        - _evaluate_metric(metric, data_b)
-    )
-
-    rng = np.random.default_rng(
-        cfg.random_state
-    )
-
-    bootstrap_statistics = np.empty(
-        cfg.samples,
-        dtype=float,
-    )
-
-    for index in range(cfg.samples):
-        indices = _moving_block_indices(
-            observations=len(data_a),
-            block_length=cfg.block_length,
-            rng=rng,
-        )
-
-        metric_a = _evaluate_metric(
-            metric,
-            data_a[indices],
-        )
-
-        metric_b = _evaluate_metric(
-            metric,
-            data_b[indices],
-        )
-
-        bootstrap_statistics[index] = (
-            metric_a - metric_b
-        )
-
-    lower, upper = _percentile_interval(
-        bootstrap_statistics,
-        confidence_level=cfg.confidence_level,
-    )
-
-    return BootstrapDifference(
-        estimate=float(estimate),
-        lower=lower,
-        upper=upper,
-        confidence_level=cfg.confidence_level,
-        samples=cfg.samples,
+        statistic=np.mean,
+        confidence_level=confidence_level,
+        n_bootstrap=n_bootstrap,
+        random_state=random_state,
     )
 
 
 def bootstrap_sharpe_ratio(
-    returns: Sequence[float] | np.ndarray,
+    returns: np.ndarray | list[float],
     *,
-    risk_free_rate: float = 0.0,
     annualization_factor: float = 252.0,
-    config: BootstrapConfig | None = None,
-) -> BootstrapCI:
+    confidence_level: float = 0.95,
+    n_bootstrap: int = 2_000,
+    random_state: int | None = 42,
+) -> BootstrapResult:
     """
-    Bootstrap an annualized Sharpe ratio.
+    Bootstrap the annualized Sharpe ratio.
 
-    Returns are assumed to be periodic returns.
+    Sharpe is calculated as:
 
-    Sharpe:
+        mean(return) / std(return)
+        × sqrt(annualization_factor)
 
-        sqrt(annualization_factor)
-        * mean(excess_return)
-        / std(excess_return)
+    A zero standard deviation is rejected because the
+    Sharpe ratio would be undefined.
     """
-
-    data = _validate_vector(returns)
-    cfg = config or BootstrapConfig()
-
-    _validate_config(cfg)
+    array = _to_array(returns)
 
     if annualization_factor <= 0:
         raise BootstrapError(
             "annualization_factor must be greater than zero."
         )
 
-    def sharpe(sample: np.ndarray) -> float:
-        excess = sample - risk_free_rate
-        volatility = float(
+    def sharpe_statistic(
+        sample: np.ndarray,
+    ) -> float:
+        standard_deviation = float(
             np.std(
-                excess,
+                sample,
                 ddof=1,
             )
         )
 
-        if volatility <= 0:
-            return 0.0
+        if standard_deviation <= 0:
+            raise BootstrapError(
+                "Sharpe ratio is undefined for zero "
+                "standard deviation."
+            )
 
         return float(
-            np.sqrt(annualization_factor)
-            * np.mean(excess)
-            / volatility
+            (
+                np.mean(sample)
+                / standard_deviation
+            )
+            * np.sqrt(
+                annualization_factor
+            )
         )
 
-    estimate = _evaluate_metric(
-        sharpe,
-        data,
-    )
-
-    bootstrap_statistics = _bootstrap_statistics(
-        data,
-        statistic=sharpe,
-        config=cfg,
-    )
-
-    lower, upper = _percentile_interval(
-        bootstrap_statistics,
-        confidence_level=cfg.confidence_level,
-    )
-
-    return BootstrapCI(
-        estimate=estimate,
-        lower=lower,
-        upper=upper,
-        confidence_level=cfg.confidence_level,
-        samples=cfg.samples,
+    return bootstrap_confidence_interval(
+        array,
+        statistic=sharpe_statistic,
+        confidence_level=confidence_level,
+        n_bootstrap=n_bootstrap,
+        random_state=random_state,
     )
 
 
-def _bootstrap_statistics(
-    data: np.ndarray,
-    *,
-    statistic: Callable[[np.ndarray], float],
-    config: BootstrapConfig,
-) -> np.ndarray:
-    """
-    Generate bootstrap statistics using moving blocks.
-    """
-
-    rng = np.random.default_rng(
-        config.random_state
-    )
-
-    bootstrap_statistics = np.empty(
-        config.samples,
-        dtype=float,
-    )
-
-    for index in range(config.samples):
-        indices = _moving_block_indices(
-            observations=len(data),
-            block_length=config.block_length,
-            rng=rng,
-        )
-
-        bootstrap_statistics[index] = _evaluate_metric(
-            statistic,
-            data[indices],
-        )
-
-    return bootstrap_statistics
-
-
-def _moving_block_indices(
+def _bootstrap_indices(
     *,
     observations: int,
-    block_length: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """
-    Generate time-series bootstrap indices using moving blocks.
-    """
-
-    effective_block_length = min(
-        block_length,
-        observations,
-    )
-
-    block_count = int(
-        np.ceil(
-            observations
-            / effective_block_length
-        )
-    )
-
-    max_start = (
-        observations
-        - effective_block_length
-    )
-
-    if max_start == 0:
-        starts = np.zeros(
-            block_count,
-            dtype=int,
-        )
-    else:
-        starts = rng.integers(
-            0,
-            max_start + 1,
-            size=block_count,
-        )
-
-    blocks = [
-        np.arange(
-            start,
-            start + effective_block_length,
-        )
-        for start in starts
-    ]
-
-    indices = np.concatenate(blocks)
-
-    return indices[:observations]
-
-
-def _percentile_interval(
-    values: np.ndarray,
-    *,
+    statistic: Callable[[np.ndarray], float],
+    point_estimate: float,
     confidence_level: float,
-) -> tuple[float, float]:
-    alpha = 1.0 - confidence_level
+    n_bootstrap: int,
+    random_state: int | None,
+) -> BootstrapResult:
+    """Bootstrap a statistic using resampled observation indices."""
 
-    lower_percentile = 100.0 * alpha / 2.0
-    upper_percentile = 100.0 * (
-        1.0 - alpha / 2.0
+    _validate_parameters(
+        confidence_level=confidence_level,
+        n_bootstrap=n_bootstrap,
     )
 
-    lower, upper = np.percentile(
-        values,
-        [lower_percentile, upper_percentile],
-    )
-
-    return float(lower), float(upper)
-
-
-def _evaluate_metric(
-    metric: Callable[[np.ndarray], float],
-    values: np.ndarray,
-) -> float:
-    try:
-        result = metric(values)
-    except Exception as exc:
-        raise BootstrapError(
-            "Metric evaluation failed."
-        ) from exc
-
-    try:
-        scalar = float(result)
-    except (TypeError, ValueError) as exc:
-        raise BootstrapError(
-            "Metric must return a scalar numeric value."
-        ) from exc
-
-    if not np.isfinite(scalar):
-        raise BootstrapError(
-            "Metric returned a non-finite value."
-        )
-
-    return scalar
-
-
-def _validate_vector(
-    values: Sequence[float] | np.ndarray,
-) -> np.ndarray:
-    try:
-        data = np.asarray(
-            values,
-            dtype=float,
-        )
-    except (TypeError, ValueError) as exc:
-        raise BootstrapError(
-            "Values must be numeric."
-        ) from exc
-
-    if data.ndim != 1:
-        raise BootstrapError(
-            "Values must be one-dimensional."
-        )
-
-    if len(data) < 2:
+    if observations < 2:
         raise BootstrapError(
             "At least two observations are required."
         )
 
-    if not np.isfinite(data).all():
-        raise BootstrapError(
-            "Values must not contain NaN or infinite values."
+    rng = np.random.default_rng(random_state)
+
+    bootstrap_statistics = np.empty(
+        n_bootstrap,
+        dtype=float,
+    )
+
+    for index in range(n_bootstrap):
+        sample_indices = rng.integers(
+            low=0,
+            high=observations,
+            size=observations,
         )
 
-    return data
+        try:
+            value = float(
+                statistic(sample_indices)
+            )
+        except BootstrapError:
+            raise
+        except Exception as exc:
+            raise BootstrapError(
+                "Bootstrap statistic failed during resampling."
+            ) from exc
+
+        if not np.isfinite(value):
+            raise BootstrapError(
+                "Bootstrap statistic returned a "
+                "non-finite value."
+            )
+
+        bootstrap_statistics[index] = value
+
+    alpha = 1.0 - confidence_level
+
+    lower_bound = float(
+        np.quantile(
+            bootstrap_statistics,
+            alpha / 2.0,
+        )
+    )
+
+    upper_bound = float(
+        np.quantile(
+            bootstrap_statistics,
+            1.0 - alpha / 2.0,
+        )
+    )
+
+    standard_error = float(
+        np.std(
+            bootstrap_statistics,
+            ddof=1,
+        )
+    )
+
+    return BootstrapResult(
+        estimate=float(point_estimate),
+        standard_error=standard_error,
+        confidence_level=confidence_level,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        bootstrap_samples=n_bootstrap,
+    )
 
 
-def _validate_config(
-    config: BootstrapConfig,
+def _to_array(
+    values: np.ndarray | list[float],
+) -> np.ndarray:
+    """Convert values to a validated one-dimensional array."""
+
+    if isinstance(values, np.ndarray):
+        try:
+            array = values.astype(
+                float,
+                copy=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise BootstrapError(
+                "Values contain non-numeric data."
+            ) from exc
+
+    elif isinstance(values, list):
+        try:
+            array = np.asarray(
+                values,
+                dtype=float,
+            )
+        except (TypeError, ValueError) as exc:
+            raise BootstrapError(
+                "Values contain non-numeric data."
+            ) from exc
+
+    else:
+        raise TypeError(
+            "Values must be a numpy array or list."
+        )
+
+    if array.ndim != 1:
+        raise BootstrapError(
+            "Values must be one-dimensional."
+        )
+
+    if len(array) < 2:
+        raise BootstrapError(
+            "At least two observations are required."
+        )
+
+    if not np.isfinite(array).all():
+        raise BootstrapError(
+            "Values contain NaN or infinite values."
+        )
+
+    return array
+
+
+def _validate_matching_lengths(
+    values_a: np.ndarray,
+    values_b: np.ndarray,
 ) -> None:
-    if config.samples < 100:
+    """Validate paired-series lengths."""
+
+    if len(values_a) != len(values_b):
         raise BootstrapError(
-            "samples must be at least 100."
+            "Both series must have the same number "
+            "of observations."
         )
 
-    if not 0.0 < config.confidence_level < 1.0:
+
+def _validate_parameters(
+    *,
+    confidence_level: float,
+    n_bootstrap: int,
+) -> None:
+    """Validate bootstrap parameters."""
+
+    if not 0.0 < confidence_level < 1.0:
         raise BootstrapError(
-            "confidence_level must be strictly between 0 and 1."
+            "confidence_level must be between 0 and 1."
         )
 
-    if config.block_length < 1:
+    if (
+        isinstance(n_bootstrap, bool)
+        or not isinstance(n_bootstrap, int)
+    ):
         raise BootstrapError(
-            "block_length must be at least 1."
+            "n_bootstrap must be an integer."
         )
 
-    if config.random_state < 0:
+    if n_bootstrap < 100:
         raise BootstrapError(
-            "random_state must be non-negative."
+            "n_bootstrap must be at least 100."
         )
