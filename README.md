@@ -1,7 +1,3 @@
-from pathlib import Path
-
-readme = r"""# Adaptive Volatility Forecasting, Tail-Risk & Portfolio Decision Engine
-
 **AVF-TRPDE** is a research-grade quantitative finance system for evaluating volatility forecasting models, latent market regimes, tail-risk measures, and risk-driven portfolio decisions through strict out-of-sample validation.
 
 > **Research question:**  
