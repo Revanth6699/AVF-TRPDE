@@ -38,35 +38,127 @@ def create_cross_asset_features(
     - cross-sectional return dispersion excluding the target asset
     - cross-sectional mean absolute return excluding the target asset
 
-    For an observation belonging to asset A at time t, the features use
-    information from the other assets at the same timestamp t only.
+    For an observation belonging to asset A at time t, the features
+    use information from the other assets at the same timestamp t only.
 
     No future observations are used.
     """
 
     _validate_input(dataframe)
 
-    df = dataframe.loc[:, REQUIRED_COLUMNS].copy()
+    df = dataframe.loc[
+        :,
+        REQUIRED_COLUMNS,
+    ].copy()
+
+    # ---------------------------------------------------------
+    # Timestamp normalization
+    # ---------------------------------------------------------
 
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
         errors="coerce",
     )
 
-    df["asset_id"] = df["asset_id"].astype("string")
+    if df["timestamp"].isna().any():
+        raise CrossAssetFeatureError(
+            "timestamp contains invalid or missing values."
+        )
+
+    # ---------------------------------------------------------
+    # Asset identifier normalization
+    # ---------------------------------------------------------
+
+    df["asset_id"] = (
+        df["asset_id"]
+        .astype("string")
+        .str.strip()
+        .str.upper()
+    )
+
+    if df["asset_id"].isna().any():
+        raise CrossAssetFeatureError(
+            "asset_id contains missing values."
+        )
+
+    if (df["asset_id"] == "").any():
+        raise CrossAssetFeatureError(
+            "asset_id contains empty values."
+        )
+
+    # ---------------------------------------------------------
+    # Close-price normalization
+    # ---------------------------------------------------------
 
     df["close"] = pd.to_numeric(
         df["close"],
         errors="coerce",
     )
 
+    if df["close"].isna().any():
+        raise CrossAssetFeatureError(
+            "close contains invalid or missing values."
+        )
+
+    if not np.isfinite(
+        df["close"].to_numpy()
+    ).all():
+        raise CrossAssetFeatureError(
+            "close contains non-finite values."
+        )
+
+    if (df["close"] <= 0).any():
+        raise CrossAssetFeatureError(
+            "close prices must be greater than zero."
+        )
+
+    # ---------------------------------------------------------
+    # Duplicate observation detection
+    # ---------------------------------------------------------
+
+    duplicate_mask = df.duplicated(
+        subset=[
+            "timestamp",
+            "asset_id",
+        ],
+        keep=False,
+    )
+
+    if duplicate_mask.any():
+        duplicate_count = int(
+            duplicate_mask.sum()
+        )
+
+        raise CrossAssetFeatureError(
+            "Duplicate asset/timestamp observations "
+            f"detected: {duplicate_count} rows."
+        )
+
+    # ---------------------------------------------------------
+    # Deterministic ordering
+    # ---------------------------------------------------------
+
     df = df.sort_values(
-        by=["asset_id", "timestamp"],
-        ascending=True,
+        by=[
+            "asset_id",
+            "timestamp",
+        ],
+        kind="mergesort",
     ).reset_index(drop=True)
 
+    # ---------------------------------------------------------
+    # Asset-wise log returns
+    #
+    # r_(i,t) = log(C_(i,t) / C_(i,t-1))
+    #
+    # Returns are calculated independently for each asset.
+    # ---------------------------------------------------------
+
     df["log_return"] = (
-        df.groupby("asset_id", sort=False)["close"]
+        df.groupby(
+            "asset_id",
+            sort=False,
+        )["close"]
         .transform(
             lambda series: np.log(
                 series / series.shift(1)
@@ -74,10 +166,18 @@ def create_cross_asset_features(
         )
     )
 
-    # Cross-sectional statistics at each timestamp.
+    # ---------------------------------------------------------
+    # Cross-sectional statistics
     #
-    # The target asset itself must be excluded from its own
-    # cross-asset features.
+    # At timestamp t:
+    #
+    #   mean return
+    #   return dispersion
+    #   mean absolute return
+    #
+    # are calculated from OTHER assets only.
+    # ---------------------------------------------------------
+
     grouped = df.groupby(
         "timestamp",
         sort=False,
@@ -88,9 +188,13 @@ def create_cross_asset_features(
 
     own_return = df["log_return"]
 
+    own_return_available = (
+        own_return.notna().astype(int)
+    )
+
     other_asset_count = (
         cross_asset_count
-        - own_return.notna().astype(int)
+        - own_return_available
     )
 
     other_asset_sum = (
@@ -98,12 +202,27 @@ def create_cross_asset_features(
         - own_return.fillna(0.0)
     )
 
+    # ---------------------------------------------------------
+    # Cross-asset mean return
+    # ---------------------------------------------------------
+
     df["cross_asset_mean_return"] = (
         other_asset_sum
-        / other_asset_count.replace(0, np.nan)
+        / other_asset_count.replace(
+            0,
+            np.nan,
+        )
     )
 
-    squared_returns = df["log_return"] ** 2
+    # ---------------------------------------------------------
+    # Cross-asset return dispersion
+    #
+    # sqrt(E[r²] - E[r]²)
+    # ---------------------------------------------------------
+
+    squared_returns = (
+        df["log_return"] ** 2
+    )
 
     cross_asset_squared_sum = (
         squared_returns.groupby(
@@ -112,7 +231,9 @@ def create_cross_asset_features(
         ).transform("sum")
     )
 
-    own_squared_return = squared_returns.fillna(0.0)
+    own_squared_return = (
+        squared_returns.fillna(0.0)
+    )
 
     other_squared_sum = (
         cross_asset_squared_sum
@@ -121,18 +242,33 @@ def create_cross_asset_features(
 
     cross_asset_mean_squared_return = (
         other_squared_sum
-        / other_asset_count.replace(0, np.nan)
-    )
-
-    df["cross_asset_return_dispersion"] = np.sqrt(
-        np.maximum(
-            cross_asset_mean_squared_return
-            - df["cross_asset_mean_return"] ** 2,
-            0.0,
+        / other_asset_count.replace(
+            0,
+            np.nan,
         )
     )
 
-    absolute_returns = df["log_return"].abs()
+    variance = (
+        cross_asset_mean_squared_return
+        - df["cross_asset_mean_return"] ** 2
+    )
+
+    df["cross_asset_return_dispersion"] = (
+        np.sqrt(
+            np.maximum(
+                variance,
+                0.0,
+            )
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Cross-asset mean absolute return
+    # ---------------------------------------------------------
+
+    absolute_returns = (
+        df["log_return"].abs()
+    )
 
     cross_asset_abs_sum = (
         absolute_returns.groupby(
@@ -141,7 +277,9 @@ def create_cross_asset_features(
         ).transform("sum")
     )
 
-    own_abs_return = absolute_returns.fillna(0.0)
+    own_abs_return = (
+        absolute_returns.fillna(0.0)
+    )
 
     other_abs_sum = (
         cross_asset_abs_sum
@@ -150,8 +288,15 @@ def create_cross_asset_features(
 
     df["cross_asset_mean_abs_return"] = (
         other_abs_sum
-        / other_asset_count.replace(0, np.nan)
+        / other_asset_count.replace(
+            0,
+            np.nan,
+        )
     )
+
+    # ---------------------------------------------------------
+    # Locked feature set
+    # ---------------------------------------------------------
 
     feature_columns = [
         "cross_asset_mean_return",
@@ -168,9 +313,16 @@ def create_cross_asset_features(
         ],
     ].copy()
 
+    # ---------------------------------------------------------
+    # Final deterministic ordering
+    # ---------------------------------------------------------
+
     result = result.sort_values(
-        by=["timestamp", "asset_id"],
-        ascending=True,
+        by=[
+            "timestamp",
+            "asset_id",
+        ],
+        kind="mergesort",
     ).reset_index(drop=True)
 
     return result
@@ -181,24 +333,36 @@ def build_cross_asset_feature_result(
 ) -> CrossAssetFeatureResult:
     """Build cross-asset features together with result metadata."""
 
-    result = create_cross_asset_features(dataframe)
+    result = create_cross_asset_features(
+        dataframe
+    )
 
     feature_columns = tuple(
         column
         for column in result.columns
-        if column not in {"timestamp", "asset_id"}
+        if column not in {
+            "timestamp",
+            "asset_id",
+        }
     )
 
     return CrossAssetFeatureResult(
         dataframe=result,
-        asset_count=int(result["asset_id"].nunique()),
+        asset_count=int(
+            result["asset_id"].nunique()
+        ),
         observation_count=len(result),
         feature_columns=feature_columns,
     )
 
 
-def _validate_input(dataframe: pd.DataFrame) -> None:
-    if not isinstance(dataframe, pd.DataFrame):
+def _validate_input(
+    dataframe: pd.DataFrame,
+) -> None:
+    if not isinstance(
+        dataframe,
+        pd.DataFrame,
+    ):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
         )
@@ -235,13 +399,13 @@ def _validate_input(dataframe: pd.DataFrame) -> None:
             "asset_id contains missing values."
         )
 
-    if (
+    asset_ids = (
         dataframe["asset_id"]
         .astype("string")
         .str.strip()
-        .eq("")
-        .any()
-    ):
+    )
+
+    if asset_ids.eq("").any():
         raise CrossAssetFeatureError(
             "asset_id contains empty values."
         )
@@ -256,7 +420,9 @@ def _validate_input(dataframe: pd.DataFrame) -> None:
             "close contains invalid or missing values."
         )
 
-    if not np.isfinite(close.to_numpy()).all():
+    if not np.isfinite(
+        close.to_numpy()
+    ).all():
         raise CrossAssetFeatureError(
             "close contains non-finite values."
         )

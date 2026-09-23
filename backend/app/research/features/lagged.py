@@ -37,11 +37,11 @@ def create_lagged_returns(
 
     Features:
 
-        return_lag_1
-        return_lag_2
-        return_lag_3
-        return_lag_5
-        return_lag_10
+        lagged_return_1
+        lagged_return_2
+        lagged_return_3
+        lagged_return_5
+        lagged_return_10
 
     Each feature uses information available strictly before
     the current observation.
@@ -60,6 +60,10 @@ def create_lagged_returns(
         ]
     ].copy()
 
+    # ---------------------------------------------------------
+    # Normalize timestamp
+    # ---------------------------------------------------------
+
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
         errors="coerce",
@@ -69,6 +73,10 @@ def create_lagged_returns(
         raise LaggedFeatureError(
             "timestamp contains invalid values."
         )
+
+    # ---------------------------------------------------------
+    # Normalize asset identifier
+    # ---------------------------------------------------------
 
     df["asset_id"] = (
         df["asset_id"]
@@ -81,6 +89,15 @@ def create_lagged_returns(
         raise LaggedFeatureError(
             "asset_id contains missing values."
         )
+
+    if (df["asset_id"] == "").any():
+        raise LaggedFeatureError(
+            "asset_id contains empty values."
+        )
+
+    # ---------------------------------------------------------
+    # Normalize close prices
+    # ---------------------------------------------------------
 
     df["close"] = pd.to_numeric(
         df["close"],
@@ -102,6 +119,10 @@ def create_lagged_returns(
             "close contains non-positive values."
         )
 
+    # ---------------------------------------------------------
+    # Deterministic ordering
+    # ---------------------------------------------------------
+
     df = df.sort_values(
         by=[
             "asset_id",
@@ -109,6 +130,10 @@ def create_lagged_returns(
         ],
         kind="mergesort",
     ).reset_index(drop=True)
+
+    # ---------------------------------------------------------
+    # Duplicate observation detection
+    # ---------------------------------------------------------
 
     duplicate_mask = df.duplicated(
         subset=[
@@ -128,11 +153,14 @@ def create_lagged_returns(
             f"detected: {duplicate_count} rows."
         )
 
-    # Daily log return:
+    # ---------------------------------------------------------
+    # Daily log return
     #
     # r_t = log(C_t / C_(t-1))
     #
-    # This is calculated independently for each asset.
+    # Calculated independently for each asset.
+    # ---------------------------------------------------------
+
     df["log_return"] = (
         df.groupby(
             "asset_id",
@@ -145,10 +173,17 @@ def create_lagged_returns(
         )
     )
 
+    # ---------------------------------------------------------
+    # Lagged returns
+    #
+    # lagged_return_k at t contains the return from
+    # t-k, therefore no future information is used.
+    # ---------------------------------------------------------
+
     feature_columns: list[str] = []
 
     for lag in lags:
-        column = f"return_lag_{lag}"
+        column = f"lagged_return_{lag}"
 
         df[column] = (
             df.groupby(
@@ -159,6 +194,10 @@ def create_lagged_returns(
         )
 
         feature_columns.append(column)
+
+    # ---------------------------------------------------------
+    # Output
+    # ---------------------------------------------------------
 
     result_columns = [
         "timestamp",
@@ -178,15 +217,13 @@ def create_lagged_volatility(
     """
     Create lagged realized-volatility features.
 
-    The input must contain a daily realized-volatility column.
+    Features:
 
-    Example:
-
-        rv_lag_1
-        rv_lag_2
-        rv_lag_3
-        rv_lag_5
-        rv_lag_10
+        lagged_volatility_1
+        lagged_volatility_2
+        lagged_volatility_3
+        lagged_volatility_5
+        lagged_volatility_10
 
     Only historical volatility observations are used.
     """
@@ -197,6 +234,19 @@ def create_lagged_volatility(
     ):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
+        )
+
+    if dataframe.empty:
+        raise LaggedFeatureError(
+            "Input dataset is empty."
+        )
+
+    if not isinstance(
+        volatility_column,
+        str,
+    ) or not volatility_column.strip():
+        raise LaggedFeatureError(
+            "volatility_column must be a non-empty string."
         )
 
     if volatility_column not in dataframe.columns:
@@ -227,6 +277,10 @@ def create_lagged_volatility(
 
     df = dataframe[required].copy()
 
+    # ---------------------------------------------------------
+    # Normalize timestamp
+    # ---------------------------------------------------------
+
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
         errors="coerce",
@@ -236,6 +290,10 @@ def create_lagged_volatility(
         raise LaggedFeatureError(
             "timestamp contains invalid values."
         )
+
+    # ---------------------------------------------------------
+    # Normalize asset identifier
+    # ---------------------------------------------------------
 
     df["asset_id"] = (
         df["asset_id"]
@@ -248,6 +306,15 @@ def create_lagged_volatility(
         raise LaggedFeatureError(
             "asset_id contains missing values."
         )
+
+    if (df["asset_id"] == "").any():
+        raise LaggedFeatureError(
+            "asset_id contains empty values."
+        )
+
+    # ---------------------------------------------------------
+    # Normalize volatility
+    # ---------------------------------------------------------
 
     df[volatility_column] = pd.to_numeric(
         df[volatility_column],
@@ -277,6 +344,10 @@ def create_lagged_volatility(
             f"{volatility_column} cannot be negative."
         )
 
+    # ---------------------------------------------------------
+    # Deterministic ordering
+    # ---------------------------------------------------------
+
     df = df.sort_values(
         by=[
             "asset_id",
@@ -284,6 +355,10 @@ def create_lagged_volatility(
         ],
         kind="mergesort",
     ).reset_index(drop=True)
+
+    # ---------------------------------------------------------
+    # Duplicate observation detection
+    # ---------------------------------------------------------
 
     duplicate_mask = df.duplicated(
         subset=[
@@ -303,10 +378,14 @@ def create_lagged_volatility(
             f"detected: {duplicate_count} rows."
         )
 
+    # ---------------------------------------------------------
+    # Lagged volatility
+    # ---------------------------------------------------------
+
     feature_columns: list[str] = []
 
     for lag in lags:
-        column = f"rv_lag_{lag}"
+        column = f"lagged_volatility_{lag}"
 
         df[column] = (
             df.groupby(
@@ -317,6 +396,10 @@ def create_lagged_volatility(
         )
 
         feature_columns.append(column)
+
+    # ---------------------------------------------------------
+    # Output
+    # ---------------------------------------------------------
 
     return df[
         [
@@ -347,7 +430,7 @@ def create_lagged_features(
     ),
 ) -> pd.DataFrame:
     """
-    Create the lagged feature set.
+    Create the combined lagged feature set.
 
     Return features are always created.
 

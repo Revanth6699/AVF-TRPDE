@@ -39,26 +39,48 @@ def create_garch_features(
     """
     Prepare GJR-GARCH forecasts as ML features.
 
-    The input must contain one forecast for each asset/timestamp
-    combination. The function does not fit a GARCH model.
+    The input must contain one forecast for each
+    asset/timestamp combination.
 
-    GARCH model fitting belongs to models/gjr_garch.py and is performed
-    inside the walk-forward training process.
+    This function does not fit a GARCH model.
 
-    Output:
-    - timestamp
-    - asset_id
-    - garch_forecast
+    GARCH model fitting belongs to:
+
+        research/models/gjr_garch.py
+
+    and is performed inside the walk-forward training process.
+
+    Output columns:
+
+        timestamp
+        asset_id
+        garch_forecast
     """
 
     _validate_input(dataframe)
 
-    df = dataframe.loc[:, REQUIRED_COLUMNS].copy()
+    df = dataframe.loc[
+        :,
+        REQUIRED_COLUMNS,
+    ].copy()
+
+    # ---------------------------------------------------------
+    # Timestamp normalization
+    # ---------------------------------------------------------
 
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
         errors="coerce",
     )
+
+    if df["timestamp"].isna().any():
+        raise GARCHFeatureError(
+            "timestamp contains invalid or missing values."
+        )
+
+    # ---------------------------------------------------------
+    # Asset identifier normalization
+    # ---------------------------------------------------------
 
     df["asset_id"] = (
         df["asset_id"]
@@ -67,17 +89,84 @@ def create_garch_features(
         .str.upper()
     )
 
+    if df["asset_id"].isna().any():
+        raise GARCHFeatureError(
+            "asset_id contains missing values."
+        )
+
+    if (df["asset_id"] == "").any():
+        raise GARCHFeatureError(
+            "asset_id contains empty values."
+        )
+
+    # ---------------------------------------------------------
+    # Forecast normalization
+    # ---------------------------------------------------------
+
     df["garch_forecast"] = pd.to_numeric(
         df["garch_forecast"],
         errors="coerce",
     )
 
+    if df["garch_forecast"].isna().any():
+        raise GARCHFeatureError(
+            "garch_forecast contains invalid or missing values."
+        )
+
+    if not np.isfinite(
+        df["garch_forecast"].to_numpy()
+    ).all():
+        raise GARCHFeatureError(
+            "garch_forecast contains non-finite values."
+        )
+
+    if (df["garch_forecast"] < 0).any():
+        raise GARCHFeatureError(
+            "garch_forecast must not contain negative values."
+        )
+
+    # ---------------------------------------------------------
+    # Duplicate detection AFTER normalization
+    # ---------------------------------------------------------
+
+    duplicate_mask = df.duplicated(
+        subset=[
+            "timestamp",
+            "asset_id",
+        ],
+        keep=False,
+    )
+
+    if duplicate_mask.any():
+        duplicate_count = int(
+            duplicate_mask.sum()
+        )
+
+        raise GARCHFeatureError(
+            "Duplicate (timestamp, asset_id) combinations "
+            f"detected: {duplicate_count} rows."
+        )
+
+    # ---------------------------------------------------------
+    # Deterministic ordering
+    # ---------------------------------------------------------
+
     df = df.sort_values(
-        by=["timestamp", "asset_id"],
-        ascending=True,
+        by=[
+            "timestamp",
+            "asset_id",
+        ],
+        ascending=[
+            True,
+            True,
+        ],
+        kind="mergesort",
     ).reset_index(drop=True)
 
-    return df.loc[:, OUTPUT_COLUMNS].copy()
+    return df.loc[
+        :,
+        OUTPUT_COLUMNS,
+    ].copy()
 
 
 def merge_garch_features(
@@ -87,19 +176,28 @@ def merge_garch_features(
     """
     Merge GJR-GARCH forecasts into an existing feature dataset.
 
-    The merge is performed using:
-    - timestamp
-    - asset_id
+    The merge key is:
+
+        timestamp
+        asset_id
 
     The original row order of the feature dataframe is preserved.
+
+    Every feature-row key must have a corresponding GARCH forecast.
     """
 
-    if not isinstance(dataframe, pd.DataFrame):
+    if not isinstance(
+        dataframe,
+        pd.DataFrame,
+    ):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
         )
 
-    if not isinstance(garch_features, pd.DataFrame):
+    if not isinstance(
+        garch_features,
+        pd.DataFrame,
+    ):
         raise TypeError(
             "garch_features must be a pandas.DataFrame."
         )
@@ -113,10 +211,10 @@ def merge_garch_features(
         garch_features,
     )
 
-    required_base_columns = {
+    required_base_columns = (
         "timestamp",
         "asset_id",
-    }
+    )
 
     missing_base = [
         column
@@ -126,16 +224,36 @@ def merge_garch_features(
 
     if missing_base:
         raise GARCHFeatureError(
-            "Input feature dataframe is missing required columns: "
+            "Input feature dataframe is missing required "
+            "columns: "
             + ", ".join(missing_base)
         )
 
     result = dataframe.copy()
 
+    # ---------------------------------------------------------
+    # Preserve original row order explicitly.
+    # ---------------------------------------------------------
+
+    result["_garch_feature_row_order"] = np.arange(
+        len(result),
+        dtype=np.int64,
+    )
+
+    # ---------------------------------------------------------
+    # Normalize merge keys
+    # ---------------------------------------------------------
+
     result["timestamp"] = pd.to_datetime(
         result["timestamp"],
         errors="coerce",
     )
+
+    if result["timestamp"].isna().any():
+        raise GARCHFeatureError(
+            "Input feature dataframe contains "
+            "invalid timestamps."
+        )
 
     result["asset_id"] = (
         result["asset_id"]
@@ -144,31 +262,36 @@ def merge_garch_features(
         .str.upper()
     )
 
-    if result["timestamp"].isna().any():
-        raise GARCHFeatureError(
-            "Input feature dataframe contains invalid timestamps."
-        )
-
     if result["asset_id"].isna().any():
         raise GARCHFeatureError(
-            "Input feature dataframe contains missing asset IDs."
+            "Input feature dataframe contains "
+            "missing asset IDs."
         )
 
+    if (result["asset_id"] == "").any():
+        raise GARCHFeatureError(
+            "Input feature dataframe contains "
+            "empty asset IDs."
+        )
+
+    # ---------------------------------------------------------
+    # Base-data duplicate detection
+    # ---------------------------------------------------------
+
     if result.duplicated(
-        subset=["timestamp", "asset_id"],
+        subset=[
+            "timestamp",
+            "asset_id",
+        ],
     ).any():
         raise GARCHFeatureError(
             "Input feature dataframe contains duplicate "
             "(timestamp, asset_id) combinations."
         )
 
-    if prepared_garch.duplicated(
-        subset=["timestamp", "asset_id"],
-    ).any():
-        raise GARCHFeatureError(
-            "GARCH features contain duplicate "
-            "(timestamp, asset_id) combinations."
-        )
+    # ---------------------------------------------------------
+    # Existing GARCH column protection
+    # ---------------------------------------------------------
 
     if "garch_forecast" in result.columns:
         raise GARCHFeatureError(
@@ -176,12 +299,77 @@ def merge_garch_features(
             "'garch_forecast'."
         )
 
+    # ---------------------------------------------------------
+    # Verify complete GARCH coverage
+    # ---------------------------------------------------------
+
+    base_keys = result.loc[
+        :,
+        [
+            "timestamp",
+            "asset_id",
+        ],
+    ]
+
+    garch_keys = prepared_garch.loc[
+        :,
+        [
+            "timestamp",
+            "asset_id",
+        ],
+    ]
+
+    coverage = base_keys.merge(
+        garch_keys,
+        on=[
+            "timestamp",
+            "asset_id",
+        ],
+        how="left",
+        indicator=True,
+        validate="one_to_one",
+    )
+
+    missing_forecasts = (
+        coverage["_merge"] == "left_only"
+    )
+
+    if missing_forecasts.any():
+        missing_count = int(
+            missing_forecasts.sum()
+        )
+
+        raise GARCHFeatureError(
+            "GARCH forecasts are missing for "
+            f"{missing_count} feature observation(s)."
+        )
+
+    # ---------------------------------------------------------
+    # Merge
+    # ---------------------------------------------------------
+
     result = result.merge(
         prepared_garch,
-        on=["timestamp", "asset_id"],
+        on=[
+            "timestamp",
+            "asset_id",
+        ],
         how="left",
         sort=False,
         validate="one_to_one",
+    )
+
+    # ---------------------------------------------------------
+    # Restore original feature row order
+    # ---------------------------------------------------------
+
+    result = result.sort_values(
+        by="_garch_feature_row_order",
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+    result = result.drop(
+        columns="_garch_feature_row_order",
     )
 
     return result
@@ -192,24 +380,36 @@ def build_garch_feature_result(
 ) -> GARCHFeatureResult:
     """Build GARCH features together with result metadata."""
 
-    result = create_garch_features(dataframe)
+    result = create_garch_features(
+        dataframe,
+    )
 
     feature_columns = tuple(
         column
         for column in result.columns
-        if column not in {"timestamp", "asset_id"}
+        if column not in {
+            "timestamp",
+            "asset_id",
+        }
     )
 
     return GARCHFeatureResult(
         dataframe=result,
-        asset_count=int(result["asset_id"].nunique()),
+        asset_count=int(
+            result["asset_id"].nunique()
+        ),
         observation_count=len(result),
         feature_columns=feature_columns,
     )
 
 
-def _validate_input(dataframe: pd.DataFrame) -> None:
-    if not isinstance(dataframe, pd.DataFrame):
+def _validate_input(
+    dataframe: pd.DataFrame,
+) -> None:
+    if not isinstance(
+        dataframe,
+        pd.DataFrame,
+    ):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
         )
@@ -247,9 +447,14 @@ def _validate_input(dataframe: pd.DataFrame) -> None:
         .str.strip()
     )
 
-    if asset_ids.isna().any() or asset_ids.eq("").any():
+    if asset_ids.isna().any():
         raise GARCHFeatureError(
-            "asset_id contains missing or empty values."
+            "asset_id contains missing values."
+        )
+
+    if asset_ids.eq("").any():
+        raise GARCHFeatureError(
+            "asset_id contains empty values."
         )
 
     forecasts = pd.to_numeric(
@@ -272,14 +477,4 @@ def _validate_input(dataframe: pd.DataFrame) -> None:
     if (forecasts < 0).any():
         raise GARCHFeatureError(
             "garch_forecast must not contain negative values."
-        )
-
-    duplicate_keys = dataframe.duplicated(
-        subset=["timestamp", "asset_id"],
-    )
-
-    if duplicate_keys.any():
-        raise GARCHFeatureError(
-            "Duplicate (timestamp, asset_id) combinations "
-            "are not allowed."
         )
