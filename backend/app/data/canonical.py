@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -56,17 +55,17 @@ def to_canonical(
         close
         volume
 
-    The function:
+    Processing order:
 
-    1. checks the source schema
-    2. optionally validates the dataset
-    3. copies the input
-    4. normalizes timestamps
-    5. normalizes asset identifiers
-    6. converts numeric fields
-    7. removes columns outside the canonical contract
-    8. sorts by asset and timestamp
-    9. returns a new DataFrame
+    1. check source schema
+    2. copy the input
+    3. normalize timestamps
+    4. normalize asset identifiers
+    5. convert numeric fields
+    6. detect duplicate observations
+    7. sort deterministically
+    8. validate the canonical result
+    9. return a new DataFrame
 
     The input DataFrame is never modified in place.
     """
@@ -74,6 +73,11 @@ def to_canonical(
     if not isinstance(dataframe, pd.DataFrame):
         raise TypeError(
             "dataframe must be a pandas.DataFrame."
+        )
+
+    if dataframe.empty:
+        raise CanonicalDataError(
+            "Cannot canonicalize an empty DataFrame."
         )
 
     missing_columns = [
@@ -88,20 +92,14 @@ def to_canonical(
             + ", ".join(missing_columns)
         )
 
+    # ---------------------------------------------------------
+    # Select canonical columns and copy
+    # ---------------------------------------------------------
+
     canonical = dataframe.loc[
         :,
         CANONICAL_COLUMNS,
     ].copy()
-
-    # ---------------------------------------------------------
-    # Optional validation before transformation
-    # ---------------------------------------------------------
-
-    if validate:
-        validate_ohlcv(
-            canonical,
-            raise_on_error=True,
-        )
 
     # ---------------------------------------------------------
     # Timestamp normalization
@@ -113,8 +111,13 @@ def to_canonical(
     )
 
     if canonical["timestamp"].isna().any():
+        invalid_count = int(
+            canonical["timestamp"].isna().sum()
+        )
+
         raise CanonicalDataError(
-            "timestamp contains invalid values after conversion."
+            "timestamp contains "
+            f"{invalid_count} invalid or missing value(s)."
         )
 
     # ---------------------------------------------------------
@@ -164,15 +167,19 @@ def to_canonical(
         count = int(numeric_missing.sum())
 
         raise CanonicalDataError(
-            f"{count} rows contain invalid numeric OHLCV values."
+            f"{count} rows contain invalid numeric "
+            "OHLCV values."
         )
 
     # ---------------------------------------------------------
-    # Remove duplicate observations
+    # Duplicate observation detection
     # ---------------------------------------------------------
 
     duplicate_mask = canonical.duplicated(
-        subset=["timestamp", "asset_id"],
+        subset=[
+            "timestamp",
+            "asset_id",
+        ],
         keep=False,
     )
 
@@ -188,7 +195,7 @@ def to_canonical(
         )
 
     # ---------------------------------------------------------
-    # Sort deterministically
+    # Deterministic sorting
     # ---------------------------------------------------------
 
     canonical = canonical.sort_values(
@@ -201,11 +208,7 @@ def to_canonical(
             True,
         ],
         kind="mergesort",
-    )
-
-    canonical = canonical.reset_index(
-        drop=True
-    )
+    ).reset_index(drop=True)
 
     # ---------------------------------------------------------
     # Stable column order
@@ -213,7 +216,21 @@ def to_canonical(
 
     canonical = canonical[
         CANONICAL_COLUMNS
-    ]
+    ].copy()
+
+    # ---------------------------------------------------------
+    # Final canonical validation
+    #
+    # Validation happens AFTER normalization and sorting.
+    # This is critical because validation checks chronological
+    # ordering and other canonical data-contract properties.
+    # ---------------------------------------------------------
+
+    if validate:
+        validate_ohlcv(
+            canonical,
+            raise_on_error=True,
+        )
 
     return canonical
 
@@ -226,7 +243,8 @@ def build_canonical_dataset(
     """
     Convert a DataFrame into a canonical dataset object.
 
-    Returns both the canonical DataFrame and basic dataset metadata.
+    Returns the canonical DataFrame together with basic
+    dataset metadata.
     """
 
     canonical = to_canonical(
