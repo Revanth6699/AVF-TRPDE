@@ -22,6 +22,9 @@ router = APIRouter(
 )
 
 
+# API-level in-memory registry.
+# Persistent experiment artifacts remain the responsibility
+# of the experiment/research layer.
 _EXPERIMENTS: dict[str, ExperimentResponse] = {}
 
 
@@ -29,6 +32,7 @@ def _model_dump(model: Any) -> dict[str, Any]:
     """Serialize a Pydantic model across supported Pydantic versions."""
     if hasattr(model, "model_dump"):
         return model.model_dump()
+
     return model.dict()
 
 
@@ -37,6 +41,8 @@ def _build_experiment_response(
     *,
     status_value: str = "configured",
 ) -> ExperimentResponse:
+    """Build the API representation of an experiment."""
+
     return ExperimentResponse(
         name=request.name,
         description=request.description,
@@ -59,6 +65,9 @@ def create_experiment(
 ) -> ExperimentResponse:
     """
     Validate and register an experiment configuration.
+
+    The research configuration parser remains the source of truth
+    for experiment configuration validation.
     """
 
     if request.name in _EXPERIMENTS:
@@ -67,8 +76,9 @@ def create_experiment(
             detail=f"Experiment '{request.name}' already exists.",
         )
 
+    raw_config = _model_dump(request)
+
     try:
-        raw_config = _model_dump(request)
         parse_experiment_config(raw_config)
     except (ValueError, TypeError) as exc:
         raise HTTPException(
@@ -126,11 +136,10 @@ def run_experiment(
     request: ExperimentRunRequest,
 ) -> ExperimentRunResponse:
     """
-    Execute one or more registered experiments.
+    Execute one or more experiment configurations.
 
-    The endpoint uses the existing experiment configuration parser
-    and experiment runner. It does not introduce model logic into
-    the API layer.
+    Configuration parsing and experiment execution are delegated to
+    the existing research-layer modules.
     """
 
     if not request.experiments:
@@ -142,10 +151,10 @@ def run_experiment(
     configurations = []
 
     for experiment_request in request.experiments:
+        raw_config = _model_dump(experiment_request)
+
         try:
-            raw_config = _model_dump(experiment_request)
-            config = parse_experiment_config(raw_config)
-            configurations.append(config)
+            configuration = parse_experiment_config(raw_config)
         except (ValueError, TypeError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -155,43 +164,45 @@ def run_experiment(
                 ),
             ) from exc
 
-    try:
-        results = []
+        configurations.append(configuration)
 
-        for config in configurations:
-            handlers = {
-                "baseline": _completed_handler,
-                "regime_xgboost": _completed_handler,
-            }
+    run_results = []
 
+    for configuration in configurations:
+        try:
             result = run_experiments(
-                config,
-                handlers=handlers,
+                configuration,
+                handlers=_build_handlers(),
             )
 
-            results.append(result)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Invalid experiment execution configuration: "
+                    f"{exc}"
+                ),
+            ) from exc
 
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Experiment execution failed: {exc}",
-        ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Experiment execution failed: {exc}",
+            ) from exc
 
-    run_results: list[ExperimentRunResultResponse] = []
+        run_results.append(result)
+
+    response_results: list[ExperimentRunResultResponse] = []
 
     successful_count = 0
     failed_count = 0
 
-    for result in results:
-        if result.all_successful:
-            successful_count += result.successful_count
-            failed_count += result.failed_count
-        else:
-            successful_count += result.successful_count
-            failed_count += result.failed_count
+    for result in run_results:
+        successful_count += result.successful_count
+        failed_count += result.failed_count
 
         for item in result.results:
-            run_results.append(
+            response_results.append(
                 ExperimentRunResultResponse(
                     name=item.name,
                     status=item.status,
@@ -201,20 +212,36 @@ def run_experiment(
             )
 
     return ExperimentRunResponse(
-        experiment_count=len(results),
+        experiment_count=len(run_results),
         successful_count=successful_count,
         failed_count=failed_count,
         all_successful=failed_count == 0,
-        results=run_results,
+        results=response_results,
     )
+
+
+def _build_handlers() -> dict[str, Any]:
+    """
+    Return the handlers currently exposed by the existing
+    experiment runner.
+
+    The API layer does not implement forecasting/risk/portfolio
+    model logic. Those implementations belong to their respective
+    research modules.
+    """
+
+    return {
+        "baseline": _completed_handler,
+        "regime_xgboost": _completed_handler,
+    }
 
 
 def _completed_handler(experiment: Any) -> dict[str, Any]:
     """
-    Adapter used by the API layer for the currently implemented
-    experiment runner.
+    Adapter for the currently implemented experiment runner.
 
-    Actual research/model execution remains in the research layer.
+    This preserves the existing research-layer contract without
+    introducing new model logic into the API.
     """
 
     return {
