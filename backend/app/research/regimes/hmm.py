@@ -44,6 +44,10 @@ class HMMRegimeDetector:
 
     No backward smoothing is used, so future observations do not
     influence the regime probability available at time t.
+
+    HMM observations are standardized using statistics estimated only
+    from the observations supplied to fit(). The same transformation
+    is then applied to all subsequent observations.
     """
 
     def __init__(
@@ -64,6 +68,9 @@ class HMMRegimeDetector:
 
         self._fitted = False
         self._last_filter_probability: np.ndarray | None = None
+
+        self._observation_mean: np.ndarray | None = None
+        self._observation_scale: np.ndarray | None = None
 
     @property
     def model(self) -> GaussianHMM:
@@ -86,16 +93,27 @@ class HMMRegimeDetector:
         """
         Fit the HMM using the supplied training observations.
 
-        In walk-forward validation, only the current training fold
-        must be supplied here.
+        The observation transformation is fitted exclusively on this
+        training data. In walk-forward validation this therefore remains
+        fold-local.
         """
 
         values = self._validate_observations(
             observations
         )
 
+        self._fit_observation_scaler(
+            values
+        )
+
+        scaled_values = self._transform_observations(
+            values
+        )
+
         try:
-            self._model.fit(values)
+            self._model.fit(
+                scaled_values
+            )
         except Exception as exc:
             raise HMMError(
                 f"HMM fitting failed: {exc}"
@@ -106,8 +124,10 @@ class HMMRegimeDetector:
                 "HMM optimizer did not converge."
             )
 
+        self._validate_fitted_covariances()
+
         training_probabilities = self._filter_probabilities(
-            values,
+            scaled_values,
             initial_probability=self._model.startprob_,
         )
 
@@ -139,8 +159,12 @@ class HMMRegimeDetector:
             observations
         )
 
+        scaled_values = self._transform_observations(
+            values
+        )
+
         return self._filter_probabilities(
-            values,
+            scaled_values,
             initial_probability=self._model.startprob_,
         )
 
@@ -164,11 +188,16 @@ class HMMRegimeDetector:
             )
 
         values = self._validate_observations(
-            observations
+            observations,
+            min_observations=1,
+        )
+
+        scaled_values = self._transform_observations(
+            values
         )
 
         return self._filter_probabilities(
-            values,
+            scaled_values,
             initial_probability=self._last_filter_probability,
             propagate_initial=True,
         )
@@ -194,7 +223,9 @@ class HMMRegimeDetector:
     ) -> HMMResult:
         """Fit the HMM and return its training results."""
 
-        self.fit(observations)
+        self.fit(
+            observations
+        )
 
         probabilities = self.filter_probabilities(
             observations
@@ -213,8 +244,16 @@ class HMMRegimeDetector:
         )
 
         regimes = pd.Series(
-            self.predict_regimes(probabilities),
+            self.predict_regimes(
+                probabilities
+            ),
             name="regime",
+        )
+
+        scaled_values = self._transform_observations(
+            self._validate_observations(
+                observations
+            )
         )
 
         return HMMResult(
@@ -222,13 +261,147 @@ class HMMRegimeDetector:
             regimes=regimes,
             log_likelihood=float(
                 self._model.score(
-                    self._validate_observations(
-                        observations
-                    )
+                    scaled_values
                 )
             ),
             n_components=self.config.n_components,
         )
+
+    def _fit_observation_scaler(
+        self,
+        observations: np.ndarray,
+    ) -> None:
+        """Fit the observation standardization on training data only."""
+
+        mean = np.mean(
+            observations,
+            axis=0,
+        )
+
+        scale = np.std(
+            observations,
+            axis=0,
+            ddof=0,
+        )
+
+        if not np.isfinite(mean).all():
+            raise HMMError(
+                "HMM observation means are non-finite."
+            )
+
+        if not np.isfinite(scale).all():
+            raise HMMError(
+                "HMM observation scales are non-finite."
+            )
+
+        # Constant observation variables cannot be standardized by
+        # their empirical standard deviation. A unit scale preserves
+        # the centered variable without introducing division by zero.
+        scale = np.where(
+            scale > np.finfo(float).eps,
+            scale,
+            1.0,
+        )
+
+        self._observation_mean = mean
+        self._observation_scale = scale
+
+    def _transform_observations(
+        self,
+        observations: np.ndarray,
+    ) -> np.ndarray:
+        """Apply the training-fold observation transformation."""
+
+        if (
+            self._observation_mean is None
+            or self._observation_scale is None
+        ):
+            raise HMMError(
+                "HMM observation scaler is not fitted."
+            )
+
+        if observations.shape[1] != (
+            self._observation_mean.shape[0]
+        ):
+            raise HMMError(
+                "Observation feature count does not match "
+                "the fitted HMM."
+            )
+
+        transformed = (
+            observations
+            - self._observation_mean
+        ) / self._observation_scale
+
+        if not np.isfinite(
+            transformed
+        ).all():
+            raise HMMError(
+                "Scaled HMM observations contain "
+                "non-finite values."
+            )
+
+        return transformed
+
+    def _validate_fitted_covariances(
+        self,
+    ) -> None:
+        """Validate fitted HMM covariance matrices."""
+
+        covariances = np.asarray(
+            self._model.covars_,
+            dtype=float,
+        )
+
+        if not np.isfinite(
+            covariances
+        ).all():
+            raise HMMError(
+                "HMM fitted covariances contain "
+                "non-finite values."
+            )
+
+        if self.config.covariance_type == "full":
+            for state, covariance in enumerate(
+                covariances
+            ):
+                if not np.allclose(
+                    covariance,
+                    covariance.T,
+                    atol=1e-10,
+                    rtol=1e-8,
+                ):
+                    raise HMMError(
+                        "HMM covariance matrix for state "
+                        f"{state} is not symmetric."
+                    )
+
+                eigenvalues = np.linalg.eigvalsh(
+                    covariance
+                )
+
+                if not np.isfinite(
+                    eigenvalues
+                ).all():
+                    raise HMMError(
+                        "HMM covariance eigenvalues are "
+                        "non-finite."
+                    )
+
+                if eigenvalues.min() <= 0:
+                    raise HMMError(
+                        "HMM covariance matrix for state "
+                        f"{state} is not positive-definite."
+                    )
+
+        elif self.config.covariance_type == "diag":
+            if (
+                covariances <= 0
+            ).any():
+                raise HMMError(
+                    "HMM diagonal covariance contains "
+                    "non-positive values."
+                )
 
     def _filter_probabilities(
         self,
@@ -344,7 +517,9 @@ class HMMRegimeDetector:
             dtype=float,
         )
 
-        for state in range(n_states):
+        for state in range(
+            n_states
+        ):
             mean = means[state]
 
             if self.config.covariance_type == "full":
@@ -415,7 +590,9 @@ class HMMRegimeDetector:
 
         return probabilities
 
-    def _require_fitted(self) -> None:
+    def _require_fitted(
+        self,
+    ) -> None:
         """Ensure the HMM has been fitted before inference."""
 
         if not self._fitted:
@@ -469,6 +646,8 @@ class HMMRegimeDetector:
     @staticmethod
     def _validate_observations(
         observations: pd.DataFrame | np.ndarray,
+        *,
+        min_observations: int = 2,
     ) -> np.ndarray:
         if isinstance(
             observations,
@@ -498,9 +677,11 @@ class HMMRegimeDetector:
                 "observations must be a two-dimensional matrix."
             )
 
-        if values.shape[0] < 2:
+        if values.shape[0] < min_observations:
             raise HMMError(
-                "At least two observations are required."
+                f"At least {min_observations} observation"
+                f"{'s' if min_observations != 1 else ''} "
+                "are required."
             )
 
         if values.shape[1] < 1:
@@ -508,14 +689,13 @@ class HMMRegimeDetector:
                 "At least one observation variable is required."
             )
 
-        if not np.isfinite(
-            values
-        ).all():
+        if not np.isfinite(values).all():
             raise HMMError(
                 "observations must contain only finite values."
             )
 
         return values
+        
 
     @staticmethod
     def _validate_probabilities(
@@ -582,6 +762,8 @@ def fit_hmm(
         config=config,
     )
 
-    detector.fit(observations)
+    detector.fit(
+        observations
+    )
 
     return detector
