@@ -16,18 +16,24 @@ router = APIRouter(
 )
 
 
-@router.post(
-    "",
-    response_model=RiskResponse,
-    status_code=status.HTTP_200_OK,
-)
-def create_risk_analysis(request: RiskRequest) -> RiskResponse:
-    """
-    Create a tail-risk analysis request.
+# API-level result registry.
+# Actual risk calculations remain in backend.app.risk.
+_RISK_RESULTS: dict[str, RiskResponse] = {}
 
-    The API validates the request contract. Actual FHS, VaR, ES,
-    and backtesting calculations belong to the research/risk layer.
-    """
+
+def _risk_key(
+    experiment_name: str,
+    model: str,
+) -> str:
+    """Build a deterministic key for a risk result."""
+
+    return f"{experiment_name}:{model}"
+
+
+def _validate_request(
+    request: RiskRequest,
+) -> None:
+    """Validate request constraints not handled by Pydantic."""
 
     if request.start_timestamp > request.end_timestamp:
         raise HTTPException(
@@ -44,7 +50,45 @@ def create_risk_analysis(request: RiskRequest) -> RiskResponse:
             detail="At least one asset is required.",
         )
 
-    return RiskResponse(
+    if not request.confidence_levels:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one confidence level is required.",
+        )
+
+
+@router.post(
+    "",
+    response_model=RiskResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_risk_analysis(
+    request: RiskRequest,
+) -> RiskResponse:
+    """
+    Register a tail-risk analysis request.
+
+    Actual FHS, VaR and ES calculations belong to the risk engine.
+    """
+
+    _validate_request(request)
+
+    key = _risk_key(
+        request.experiment_name,
+        request.model,
+    )
+
+    if key in _RISK_RESULTS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Risk analysis for experiment "
+                f"'{request.experiment_name}' and model "
+                f"'{request.model}' already exists."
+            ),
+        )
+
+    response = RiskResponse(
         experiment_name=request.experiment_name,
         dataset_name=request.dataset_name,
         model=request.model,
@@ -54,6 +98,10 @@ def create_risk_analysis(request: RiskRequest) -> RiskResponse:
         status="accepted",
     )
 
+    _RISK_RESULTS[key] = response
+
+    return response
+
 
 @router.get(
     "/{experiment_name}",
@@ -61,18 +109,60 @@ def create_risk_analysis(request: RiskRequest) -> RiskResponse:
 )
 def get_risk_analysis(
     experiment_name: str,
+    model: str | None = None,
 ) -> RiskResponse:
     """
-    Retrieve stored risk-analysis results.
+    Retrieve a registered risk result.
+
+    When multiple models exist for an experiment, the model must
+    be supplied explicitly.
     """
 
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_IMPLEMENTED,
-        detail=(
-            f"Risk result retrieval for experiment "
-            f"'{experiment_name}' is not connected to storage yet."
-        ),
-    )
+    matches = [
+        result
+        for key, result in _RISK_RESULTS.items()
+        if key.startswith(f"{experiment_name}:")
+    ]
+
+    if not matches:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No risk analysis found for experiment "
+                f"'{experiment_name}'."
+            ),
+        )
+
+    if model is not None:
+        key = _risk_key(
+            experiment_name,
+            model,
+        )
+
+        result = _RISK_RESULTS.get(key)
+
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"No risk analysis found for experiment "
+                    f"'{experiment_name}' and model '{model}'."
+                ),
+            )
+
+        return result
+
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Multiple risk models exist for experiment "
+                f"'{experiment_name}'. Supply the 'model' query "
+                f"parameter."
+            ),
+        )
+
+    return matches[0]
 
 
 @router.post(
@@ -83,25 +173,46 @@ def backtest_risk(
     request: RiskRequest,
 ) -> RiskBacktestResponse:
     """
-    Backtest VaR/ES forecasts.
+    Backtest registered VaR forecasts.
 
-    Actual Kupiec and Christoffersen calculations belong to the
-    research/risk backtesting layer.
+    Kupiec unconditional-coverage and Christoffersen tests are
+    performed by the research/risk layer.
     """
 
-    if request.start_timestamp > request.end_timestamp:
+    _validate_request(request)
+
+    key = _risk_key(
+        request.experiment_name,
+        request.model,
+    )
+
+    risk_result = _RISK_RESULTS.get(key)
+
+    if risk_result is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                "start_timestamp must be earlier than or equal "
-                "to end_timestamp."
+                f"No risk analysis registered for experiment "
+                f"'{request.experiment_name}' and model "
+                f"'{request.model}'."
+            ),
+        )
+
+    if not risk_result.risk_points:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Risk analysis contains no observations. "
+                "Run the risk pipeline before backtesting."
             ),
         )
 
     raise HTTPException(
-        status_code=status.HTTP_404_NOT_IMPLEMENTED,
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=(
-            "Risk backtesting engine is not connected yet."
+            "Risk backtesting requires the existing Kupiec and "
+            "Christoffersen engines to expose their result "
+            "integration contract to the API layer."
         ),
     )
 
@@ -114,24 +225,47 @@ def compare_risk(
     request: RiskRequest,
 ) -> RiskComparisonResponse:
     """
-    Compare risk estimates across models.
+    Compare registered risk estimates across models.
 
-    Actual FHS, VaR, ES and statistical backtesting calculations
-    belong to the research/risk layer.
+    Comparison uses the locked VaR 95%, VaR 99% and ES measures.
     """
 
-    if request.start_timestamp > request.end_timestamp:
+    _validate_request(request)
+
+    experiment_results = [
+        result
+        for key, result in _RISK_RESULTS.items()
+        if key.startswith(f"{request.experiment_name}:")
+    ]
+
+    if not experiment_results:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                "start_timestamp must be earlier than or equal "
-                "to end_timestamp."
+                f"No risk analyses registered for experiment "
+                f"'{request.experiment_name}'."
+            ),
+        )
+
+    populated = [
+        result
+        for result in experiment_results
+        if result.risk_points
+    ]
+
+    if not populated:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Registered risk analyses contain no observations. "
+                "Run the risk pipeline before comparison."
             ),
         )
 
     raise HTTPException(
-        status_code=status.HTTP_404_NOT_IMPLEMENTED,
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=(
-            "Risk comparison engine is not connected yet."
+            "Risk comparison requires the existing risk engine "
+            "integration contract."
         ),
     )
