@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, status
 
 from backend.app.schemas.forecast import (
@@ -10,6 +7,10 @@ from backend.app.schemas.forecast import (
     ForecastEvaluationResponse,
     ForecastRequest,
     ForecastResponse,
+)
+from backend.app.storage import (
+    RecordExistsError,
+    storage,
 )
 
 
@@ -19,16 +20,11 @@ router = APIRouter(
 )
 
 
-# In-memory API result registry.
-# Actual persistent artifacts belong to the research/experiment layer.
-_FORECASTS: dict[str, ForecastResponse] = {}
-
-
 def _forecast_key(
     experiment_name: str,
     model: str,
 ) -> str:
-    """Build a deterministic registry key for a forecast result."""
+    """Build a deterministic forecast key."""
 
     return f"{experiment_name}:{model}"
 
@@ -54,6 +50,22 @@ def _validate_request(
         )
 
 
+def _forecast_response(
+    record: dict,
+) -> ForecastResponse:
+    """Convert a persistent forecast record into an API response."""
+
+    return ForecastResponse(
+        experiment_name=record["experiment_name"],
+        dataset_name=record["dataset_name"],
+        model=record["model"],
+        forecasts=record["forecasts"],
+        observation_count=record["observation_count"],
+        asset_count=record["asset_count"],
+        status=record["status"],
+    )
+
+
 @router.post(
     "",
     response_model=ForecastResponse,
@@ -71,36 +83,25 @@ def create_forecast(
 
     _validate_request(request)
 
-    key = _forecast_key(
-        request.experiment_name,
-        request.model,
-    )
+    record = {
+        "experiment_name": request.experiment_name,
+        "dataset_name": request.dataset_name,
+        "model": request.model,
+        "forecasts": [],
+        "observation_count": 0,
+        "asset_count": len(request.assets),
+        "status": "accepted",
+    }
 
-    existing = _FORECASTS.get(key)
-
-    if existing is not None:
+    try:
+        storage.save_forecast(record)
+    except RecordExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Forecast for experiment "
-                f"'{request.experiment_name}' and model "
-                f"'{request.model}' already exists."
-            ),
-        )
+            detail=str(exc),
+        ) from exc
 
-    response = ForecastResponse(
-        experiment_name=request.experiment_name,
-        dataset_name=request.dataset_name,
-        model=request.model,
-        forecasts=[],
-        observation_count=0,
-        asset_count=len(request.assets),
-        status="accepted",
-    )
-
-    _FORECASTS[key] = response
-
-    return response
+    return _forecast_response(record)
 
 
 @router.get(
@@ -118,30 +119,13 @@ def get_forecast(
     supplied explicitly.
     """
 
-    matches = [
-        forecast
-        for key, forecast in _FORECASTS.items()
-        if key.startswith(f"{experiment_name}:")
-    ]
-
-    if not matches:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                f"No forecast found for experiment "
-                f"'{experiment_name}'."
-            ),
-        )
-
     if model is not None:
-        key = _forecast_key(
+        record = storage.get_forecast(
             experiment_name,
             model,
         )
 
-        forecast = _FORECASTS.get(key)
-
-        if forecast is None:
+        if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
@@ -150,9 +134,22 @@ def get_forecast(
                 ),
             )
 
-        return forecast
+        return _forecast_response(record)
 
-    if len(matches) > 1:
+    records = storage.list_forecasts(
+        experiment_name,
+    )
+
+    if not records:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No forecast found for experiment "
+                f"'{experiment_name}'."
+            ),
+        )
+
+    if len(records) > 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -162,7 +159,7 @@ def get_forecast(
             ),
         )
 
-    return matches[0]
+    return _forecast_response(records[0])
 
 
 @router.post(
@@ -181,12 +178,10 @@ def evaluate_forecast(
 
     _validate_request(request)
 
-    key = _forecast_key(
+    forecast = storage.get_forecast(
         request.experiment_name,
         request.model,
     )
-
-    forecast = _FORECASTS.get(key)
 
     if forecast is None:
         raise HTTPException(
@@ -198,7 +193,7 @@ def evaluate_forecast(
             ),
         )
 
-    if not forecast.forecasts:
+    if not forecast["forecasts"]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -234,11 +229,9 @@ def compare_forecasts(
 
     _validate_request(request)
 
-    experiment_forecasts = [
-        forecast
-        for key, forecast in _FORECASTS.items()
-        if key.startswith(f"{request.experiment_name}:")
-    ]
+    experiment_forecasts = storage.list_forecasts(
+        request.experiment_name,
+    )
 
     if not experiment_forecasts:
         raise HTTPException(
@@ -252,7 +245,7 @@ def compare_forecasts(
     populated = [
         forecast
         for forecast in experiment_forecasts
-        if forecast.forecasts
+        if forecast["forecasts"]
     ]
 
     if not populated:

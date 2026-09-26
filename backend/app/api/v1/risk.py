@@ -8,17 +8,16 @@ from backend.app.schemas.risk import (
     RiskRequest,
     RiskResponse,
 )
+from backend.app.storage import (
+    RecordExistsError,
+    storage,
+)
 
 
 router = APIRouter(
     prefix="/risk",
     tags=["Risk"],
 )
-
-
-# API-level result registry.
-# Actual risk calculations remain in backend.app.risk.
-_RISK_RESULTS: dict[str, RiskResponse] = {}
 
 
 def _risk_key(
@@ -56,6 +55,32 @@ def _validate_request(
             detail="At least one confidence level is required.",
         )
 
+    for confidence_level in request.confidence_levels:
+        if not 0.0 < confidence_level < 1.0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "confidence_levels must contain values "
+                    "strictly between 0 and 1."
+                ),
+            )
+
+
+def _risk_response(
+    record: dict,
+) -> RiskResponse:
+    """Convert a persistent risk record to the API response."""
+
+    return RiskResponse(
+        experiment_name=record["experiment_name"],
+        dataset_name=record["dataset_name"],
+        model=record["model"],
+        risk_points=record["risk_points"],
+        observation_count=record["observation_count"],
+        asset_count=record["asset_count"],
+        status=record["status"],
+    )
+
 
 @router.post(
     "",
@@ -68,39 +93,31 @@ def create_risk_analysis(
     """
     Register a tail-risk analysis request.
 
-    Actual FHS, VaR and ES calculations belong to the risk engine.
+    Actual FHS, VaR and ES calculations belong to the
+    research/risk layer.
     """
 
     _validate_request(request)
 
-    key = _risk_key(
-        request.experiment_name,
-        request.model,
-    )
+    record = {
+        "experiment_name": request.experiment_name,
+        "dataset_name": request.dataset_name,
+        "model": request.model,
+        "risk_points": [],
+        "observation_count": 0,
+        "asset_count": len(request.assets),
+        "status": "accepted",
+    }
 
-    if key in _RISK_RESULTS:
+    try:
+        storage.save_risk(record)
+    except RecordExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Risk analysis for experiment "
-                f"'{request.experiment_name}' and model "
-                f"'{request.model}' already exists."
-            ),
-        )
+            detail=str(exc),
+        ) from exc
 
-    response = RiskResponse(
-        experiment_name=request.experiment_name,
-        dataset_name=request.dataset_name,
-        model=request.model,
-        risk_points=[],
-        observation_count=0,
-        asset_count=len(request.assets),
-        status="accepted",
-    )
-
-    _RISK_RESULTS[key] = response
-
-    return response
+    return _risk_response(record)
 
 
 @router.get(
@@ -112,36 +129,19 @@ def get_risk_analysis(
     model: str | None = None,
 ) -> RiskResponse:
     """
-    Retrieve a registered risk result.
+    Retrieve a persistently registered risk result.
 
-    When multiple models exist for an experiment, the model must
-    be supplied explicitly.
+    When multiple models exist for an experiment, the model
+    must be supplied explicitly.
     """
 
-    matches = [
-        result
-        for key, result in _RISK_RESULTS.items()
-        if key.startswith(f"{experiment_name}:")
-    ]
-
-    if not matches:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=(
-                f"No risk analysis found for experiment "
-                f"'{experiment_name}'."
-            ),
-        )
-
     if model is not None:
-        key = _risk_key(
+        record = storage.get_risk(
             experiment_name,
             model,
         )
 
-        result = _RISK_RESULTS.get(key)
-
-        if result is None:
+        if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
@@ -150,19 +150,32 @@ def get_risk_analysis(
                 ),
             )
 
-        return result
+        return _risk_response(record)
 
-    if len(matches) > 1:
+    records = storage.list_risks(
+        experiment_name,
+    )
+
+    if not records:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No risk analysis found for experiment "
+                f"'{experiment_name}'."
+            ),
+        )
+
+    if len(records) > 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
                 f"Multiple risk models exist for experiment "
-                f"'{experiment_name}'. Supply the 'model' query "
-                f"parameter."
+                f"'{experiment_name}'. Supply the 'model' "
+                "query parameter."
             ),
         )
 
-    return matches[0]
+    return _risk_response(records[0])
 
 
 @router.post(
@@ -175,18 +188,16 @@ def backtest_risk(
     """
     Backtest registered VaR forecasts.
 
-    Kupiec unconditional-coverage and Christoffersen tests are
-    performed by the research/risk layer.
+    Kupiec unconditional-coverage and Christoffersen tests
+    are performed by the research/risk layer.
     """
 
     _validate_request(request)
 
-    key = _risk_key(
+    risk_result = storage.get_risk(
         request.experiment_name,
         request.model,
     )
-
-    risk_result = _RISK_RESULTS.get(key)
 
     if risk_result is None:
         raise HTTPException(
@@ -198,7 +209,7 @@ def backtest_risk(
             ),
         )
 
-    if not risk_result.risk_points:
+    if not risk_result["risk_points"]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -227,16 +238,15 @@ def compare_risk(
     """
     Compare registered risk estimates across models.
 
-    Comparison uses the locked VaR 95%, VaR 99% and ES measures.
+    Comparison uses the locked VaR 95%, VaR 99% and ES 95%
+    measures.
     """
 
     _validate_request(request)
 
-    experiment_results = [
-        result
-        for key, result in _RISK_RESULTS.items()
-        if key.startswith(f"{request.experiment_name}:")
-    ]
+    experiment_results = storage.list_risks(
+        request.experiment_name,
+    )
 
     if not experiment_results:
         raise HTTPException(
@@ -250,7 +260,7 @@ def compare_risk(
     populated = [
         result
         for result in experiment_results
-        if result.risk_points
+        if result["risk_points"]
     ]
 
     if not populated:

@@ -16,6 +16,10 @@ from backend.app.schemas.experiment import (
     ExperimentRunResponse,
     ExperimentRunResultResponse,
 )
+from backend.app.storage import (
+    RecordExistsError,
+    storage,
+)
 
 
 router = APIRouter(
@@ -24,14 +28,8 @@ router = APIRouter(
 )
 
 
-# API-level in-memory registry.
-# Persistent experiment artifacts remain the responsibility
-# of the experiment/research layer.
-_EXPERIMENTS: dict[str, ExperimentResponse] = {}
-
-
 def _model_dump(model: Any) -> dict[str, Any]:
-    """Serialize a Pydantic model across supported Pydantic versions."""
+    """Serialize a Pydantic model."""
 
     if hasattr(model, "model_dump"):
         return model.model_dump()
@@ -67,19 +65,11 @@ def create_experiment(
     request: ExperimentRequest,
 ) -> ExperimentResponse:
     """
-    Validate and register an experiment configuration.
+    Validate and persist an experiment configuration.
 
     The research configuration parser remains the source of truth
     for experiment configuration validation.
     """
-
-    if request.name in _EXPERIMENTS:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Experiment '{request.name}' already exists."
-            ),
-        )
 
     raw_config = {
         "experiments": [
@@ -97,7 +87,15 @@ def create_experiment(
 
     response = _build_experiment_response(request)
 
-    _EXPERIMENTS[request.name] = response
+    try:
+        storage.save_experiment(
+            _model_dump(response),
+        )
+    except RecordExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
     return response
 
@@ -107,9 +105,23 @@ def create_experiment(
     response_model=ExperimentListResponse,
 )
 def list_experiments() -> ExperimentListResponse:
-    """Return all registered experiment configurations."""
+    """Return all persistently registered experiments."""
 
-    experiments = list(_EXPERIMENTS.values())
+    records = storage.list_experiments()
+
+    experiments = [
+        ExperimentResponse(
+            name=record["name"],
+            description=record["description"],
+            models=record["models"],
+            metrics=record["metrics"],
+            risk_measures=record["risk_measures"],
+            parameters=record["parameters"],
+            metadata=record["metadata"],
+            status=record["status"],
+        )
+        for record in records
+    ]
 
     return ExperimentListResponse(
         experiments=experiments,
@@ -125,9 +137,8 @@ def run_experiment(
     request: ExperimentRunRequest,
 ) -> ExperimentRunResponse:
     """
-    Execute one or more registered experiments.
+    Execute one or more persistently registered experiments.
 
-    The request identifies experiments by their registered names.
     Configuration parsing and execution remain delegated to the
     existing research-layer modules.
     """
@@ -141,11 +152,9 @@ def run_experiment(
     run_results = []
 
     for experiment_name in request.experiment_names:
-        registered_experiment = _EXPERIMENTS.get(
-            experiment_name
-        )
+        record = storage.get_experiment(experiment_name)
 
-        if registered_experiment is None:
+        if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
@@ -157,43 +166,31 @@ def run_experiment(
         raw_config = {
             "experiments": [
                 {
-                    "name": registered_experiment.name,
-                    "description": (
-                        registered_experiment.description
-                    ),
-                    "models": registered_experiment.models,
-                    "metrics": registered_experiment.metrics,
-                    "risk_measures": (
-                        registered_experiment.risk_measures
-                    ),
-                    "parameters": (
-                        registered_experiment.parameters
-                    ),
-                    "metadata": (
-                        registered_experiment.metadata
-                    ),
-                }
+                    "name": record["name"],
+                    "description": record["description"],
+                    "models": record["models"],
+                    "metrics": record["metrics"],
+                    "risk_measures": record["risk_measures"],
+                    "parameters": record["parameters"],
+                    "metadata": record["metadata"],
+                },
             ],
         }
 
         try:
             configuration = parse_experiment_config(
-                raw_config
+                raw_config,
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY
-                ),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     f"Invalid experiment "
                     f"'{experiment_name}': {exc}"
                 ),
             ) from exc
 
-        handlers = _build_handlers(
-            configuration
-        )
+        handlers = _build_handlers(configuration)
 
         try:
             result = run_experiments(
@@ -202,9 +199,7 @@ def run_experiment(
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY
-                ),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     "Invalid experiment execution "
                     f"configuration: {exc}"
@@ -212,9 +207,7 @@ def run_experiment(
             ) from exc
         except Exception as exc:
             raise HTTPException(
-                status_code=(
-                    status.HTTP_500_INTERNAL_SERVER_ERROR
-                ),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=(
                     f"Experiment execution failed: {exc}"
                 ),
@@ -259,11 +252,11 @@ def run_experiment(
 def get_experiment(
     experiment_name: str,
 ) -> ExperimentResponse:
-    """Return one registered experiment configuration."""
+    """Return one persistently registered experiment."""
 
-    experiment = _EXPERIMENTS.get(experiment_name)
+    record = storage.get_experiment(experiment_name)
 
-    if experiment is None:
+    if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
@@ -272,7 +265,16 @@ def get_experiment(
             ),
         )
 
-    return experiment
+    return ExperimentResponse(
+        name=record["name"],
+        description=record["description"],
+        models=record["models"],
+        metrics=record["metrics"],
+        risk_measures=record["risk_measures"],
+        parameters=record["parameters"],
+        metadata=record["metadata"],
+        status=record["status"],
+    )
 
 
 def _build_handlers(
@@ -282,9 +284,7 @@ def _build_handlers(
     Build handlers for the experiments in the supplied
     validated configuration.
 
-    The API layer does not implement model logic. The current
-    adapter preserves the existing experiment-runner contract
-    while the research handlers are integrated separately.
+    The API layer does not implement model logic.
     """
 
     return {
@@ -298,12 +298,9 @@ def _completed_handler(
 ) -> dict[str, Any]:
     """
     Adapter for the currently implemented experiment runner.
-
-    This preserves the existing research-layer contract without
-    introducing new model logic into the API.
     """
 
     return {
         "models": tuple(experiment.models),
         "status": "completed",
-    }   
+    }
