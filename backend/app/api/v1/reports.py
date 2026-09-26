@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
 
 from backend.app.schemas.report import (
-    ReportGenerationResult,
     ReportRequest,
     ReportResponse,
     ReportRunResponse,
@@ -25,7 +24,7 @@ def _report_key(
     experiment_name: str,
     report_type: str,
 ) -> str:
-    """Build a deterministic report key."""
+    """Build a deterministic report registry key."""
 
     return f"{experiment_name}:{report_type}"
 
@@ -33,7 +32,7 @@ def _report_key(
 def _validate_request(
     request: ReportRequest,
 ) -> None:
-    """Validate request constraints not handled by Pydantic."""
+    """Validate report request constraints."""
 
     if request.start_timestamp > request.end_timestamp:
         raise HTTPException(
@@ -56,7 +55,8 @@ def create_report(
     """
     Register a research report request.
 
-    Report generation itself belongs to the reporting/research layer.
+    Actual report generation belongs to the research/reporting
+    layer and is not fabricated by the API.
     """
 
     _validate_request(request)
@@ -98,10 +98,10 @@ def get_report(
     report_type: str | None = None,
 ) -> ReportResponse:
     """
-    Retrieve a registered report.
+    Retrieve a registered report request/result.
 
-    If multiple report types exist for an experiment, the
-    report_type query parameter must be supplied.
+    If multiple report types exist for an experiment,
+    report_type must be supplied.
     """
 
     matches = [
@@ -159,10 +159,10 @@ def run_report(
     request: ReportRequest,
 ) -> ReportRunResponse:
     """
-    Execute report generation through the reporting layer.
+    Execute report generation through the research/reporting layer.
 
-    The API does not fabricate research findings when the reporting
-    engine has not exposed its execution contract.
+    The API does not fabricate research findings when the
+    reporting engine is not connected.
     """
 
     _validate_request(request)
@@ -188,7 +188,7 @@ def run_report(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=(
-            "Report generation requires the reporting/research "
-            "engine integration contract."
+            "Report generation requires the existing "
+            "research/reporting engine integration contract."
         ),
     )

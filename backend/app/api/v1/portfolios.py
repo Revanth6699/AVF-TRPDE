@@ -7,6 +7,10 @@ from backend.app.schemas.portfolio import (
     PortfolioRequest,
     PortfolioResponse,
 )
+from backend.app.storage import (
+    RecordExistsError,
+    storage,
+)
 
 
 router = APIRouter(
@@ -15,24 +19,10 @@ router = APIRouter(
 )
 
 
-# API-level registry.
-# Portfolio calculations remain in backend.app.portfolio.
-_PORTFOLIO_RESULTS: dict[str, PortfolioResponse] = {}
-
-
-def _portfolio_key(
-    experiment_name: str,
-    strategy: str,
-) -> str:
-    """Build a deterministic portfolio-result key."""
-
-    return f"{experiment_name}:{strategy}"
-
-
 def _validate_request(
     request: PortfolioRequest,
 ) -> None:
-    """Validate constraints not handled by Pydantic."""
+    """Validate portfolio request constraints."""
 
     if request.start_timestamp > request.end_timestamp:
         raise HTTPException(
@@ -48,6 +38,22 @@ def _validate_request(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one asset is required.",
         )
+
+
+def _portfolio_response(
+    record: dict,
+) -> PortfolioResponse:
+    """Convert a persistent portfolio record to an API response."""
+
+    return PortfolioResponse(
+        experiment_name=record["experiment_name"],
+        dataset_name=record["dataset_name"],
+        strategy=record["strategy"],
+        positions=record["positions"],
+        observation_count=record["observation_count"],
+        asset_count=record["asset_count"],
+        status=record["status"],
+    )
 
 
 @router.post(
@@ -68,34 +74,25 @@ def create_portfolio_analysis(
 
     _validate_request(request)
 
-    key = _portfolio_key(
-        request.experiment_name,
-        request.strategy,
-    )
+    record = {
+        "experiment_name": request.experiment_name,
+        "dataset_name": request.dataset_name,
+        "strategy": request.strategy,
+        "positions": [],
+        "observation_count": 0,
+        "asset_count": len(request.assets),
+        "status": "accepted",
+    }
 
-    if key in _PORTFOLIO_RESULTS:
+    try:
+        storage.save_portfolio(record)
+    except RecordExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Portfolio analysis for experiment "
-                f"'{request.experiment_name}' and strategy "
-                f"'{request.strategy}' already exists."
-            ),
-        )
+            detail=str(exc),
+        ) from exc
 
-    response = PortfolioResponse(
-        experiment_name=request.experiment_name,
-        dataset_name=request.dataset_name,
-        strategy=request.strategy,
-        positions=[],
-        observation_count=0,
-        asset_count=len(request.assets),
-        status="accepted",
-    )
-
-    _PORTFOLIO_RESULTS[key] = response
-
-    return response
+    return _portfolio_response(record)
 
 
 @router.get(
@@ -113,13 +110,28 @@ def get_portfolio_analysis(
     must be supplied explicitly.
     """
 
-    matches = [
-        result
-        for key, result in _PORTFOLIO_RESULTS.items()
-        if key.startswith(f"{experiment_name}:")
-    ]
+    if strategy is not None:
+        record = storage.get_portfolio(
+            experiment_name,
+            strategy,
+        )
 
-    if not matches:
+        if record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"No portfolio analysis found for experiment "
+                    f"'{experiment_name}' and strategy '{strategy}'."
+                ),
+            )
+
+        return _portfolio_response(record)
+
+    records = storage.list_portfolios(
+        experiment_name,
+    )
+
+    if not records:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
@@ -128,27 +140,7 @@ def get_portfolio_analysis(
             ),
         )
 
-    if strategy is not None:
-        key = _portfolio_key(
-            experiment_name,
-            strategy,
-        )
-
-        result = _PORTFOLIO_RESULTS.get(key)
-
-        if result is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    f"No portfolio analysis found for experiment "
-                    f"'{experiment_name}' and strategy "
-                    f"'{strategy}'."
-                ),
-            )
-
-        return result
-
-    if len(matches) > 1:
+    if len(records) > 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -158,7 +150,7 @@ def get_portfolio_analysis(
             ),
         )
 
-    return matches[0]
+    return _portfolio_response(records[0])
 
 
 @router.post(
@@ -171,17 +163,15 @@ def compare_portfolios(
     """
     Compare registered portfolio strategies.
 
-    The locked comparison metrics are supplied by the portfolio
-    research layer once populated results are available.
+    Actual portfolio construction and performance calculations
+    belong to the portfolio research layer.
     """
 
     _validate_request(request)
 
-    experiment_results = [
-        result
-        for key, result in _PORTFOLIO_RESULTS.items()
-        if key.startswith(f"{request.experiment_name}:")
-    ]
+    experiment_results = storage.list_portfolios(
+        request.experiment_name,
+    )
 
     if not experiment_results:
         raise HTTPException(
@@ -195,7 +185,7 @@ def compare_portfolios(
     populated = [
         result
         for result in experiment_results
-        if result.positions
+        if result["positions"]
     ]
 
     if not populated:
