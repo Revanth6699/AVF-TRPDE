@@ -444,17 +444,37 @@ class WalkForwardRunner:
                 config=xgboost_config,
             )
 
+            base_feature_columns = (
+                tuple(feature_columns)
+                if feature_columns is not None
+                else None
+            )
+
+            if base_feature_columns is None:
+                effective_feature_columns = None
+            else:
+                effective_feature_columns = (
+                    *base_feature_columns,
+                    *(
+                        ("garch_forecast",)
+                        if include_garch
+                        else ()
+                    ),
+                    *(
+                        regime_columns
+                        if include_hmm
+                        else ()
+                    ),
+                )
+
             xgboost.fit(
                 features=train_features,
                 target=train_features[
                     target_column
                 ],
-                feature_columns=(
-                    feature_columns
-                    if feature_columns is not None
-                    else None
-                ),
+                feature_columns=effective_feature_columns,
             )
+
 
             predictions = xgboost.predict(
                 test_features
@@ -759,15 +779,30 @@ class WalkForwardRunner:
             config=xgboost_config,
         )
 
+        base_feature_columns = (
+            tuple(feature_columns)
+            if feature_columns is not None
+            else None
+        )
+
+        if base_feature_columns is None:
+            effective_feature_columns = None
+        else:
+            effective_feature_columns = (
+                *base_feature_columns,
+                "garch_forecast",
+            )
+
         model.fit(
             features=train_features,
             target=train_features[
                 target_column
             ],
             regime_columns=regime_columns,
-            feature_columns=feature_columns,
+            feature_columns=effective_feature_columns,
         )
 
+        
         predictions = model.predict(
             test_features
         )
