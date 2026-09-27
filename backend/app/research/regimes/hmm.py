@@ -17,7 +17,7 @@ class HMMConfig:
 
     n_components: int
     covariance_type: str = "full"
-    n_iter: int = 200
+    n_iter: int = 300
     tol: float = 1e-4
     random_state: int = 42
 
@@ -744,7 +744,7 @@ def fit_hmm(
     *,
     n_components: int,
     covariance_type: str = "full",
-    n_iter: int = 200,
+    n_iter: int = 300,
     tol: float = 1e-4,
     random_state: int = 42,
 ) -> HMMRegimeDetector:
