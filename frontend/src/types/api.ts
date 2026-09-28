@@ -13,8 +13,19 @@ export interface DatasetResponse extends DatasetRequest {
   status: string;
 }
 
+export interface DatasetListItem {
+  name: string;
+  source: string;
+  frequency: string;
+  asset_count: number;
+  row_count: number;
+  start_timestamp: string | null;
+  end_timestamp: string | null;
+  fingerprint: string;
+}
+
 export interface DatasetListResponse {
-  datasets: DatasetResponse[];
+  datasets: DatasetListItem[];
   count: number;
 }
 
