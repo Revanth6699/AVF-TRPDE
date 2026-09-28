@@ -20,6 +20,7 @@ class HMMConfig:
     n_iter: int = 300
     tol: float = 1e-4
     random_state: int = 42
+    min_covar: float = 1e-6
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class HMMRegimeDetector:
             n_iter=config.n_iter,
             tol=config.tol,
             random_state=config.random_state,
+            min_covar=config.min_covar,
         )
 
         self._fitted = False
@@ -124,6 +126,7 @@ class HMMRegimeDetector:
                 "HMM optimizer did not converge."
             )
 
+        self._regularize_fitted_covariances()
         self._validate_fitted_covariances()
 
         training_probabilities = self._filter_probabilities(
@@ -343,6 +346,92 @@ class HMMRegimeDetector:
 
         return transformed
 
+    def _regularize_fitted_covariances(
+        self,
+    ) -> None:
+        """Apply a numerical covariance floor after HMM fitting.
+
+        The HMM is fitted independently on each walk-forward training
+        fold. Small folds can produce a state with a collapsed variance
+        or a nearly singular full covariance. Projecting the fitted
+        covariance onto the positive-definite region prevents numerical
+        failure while preserving the fitted state means and transition
+        probabilities.
+        """
+
+        floor = float(self.config.min_covar)
+
+        covariances = np.asarray(
+            self._model.covars_,
+            dtype=float,
+        ).copy()
+
+        if not np.isfinite(covariances).all():
+            raise HMMError(
+                "HMM fitted covariances contain non-finite values."
+            )
+
+        if self.config.covariance_type == "diag":
+            # hmmlearn exposes diagonal covariances through
+            # ``covars_`` as expanded square matrices, while its
+            # setter requires the compact shape
+            # (n_components, n_dimensions).
+            if covariances.ndim == 3:
+                covariances = np.diagonal(
+                    covariances,
+                    axis1=1,
+                    axis2=2,
+                )
+
+            if covariances.ndim != 2:
+                raise HMMError(
+                    "HMM diagonal covariance has an invalid shape."
+                )
+
+            covariances = np.maximum(
+                covariances,
+                floor,
+            )
+
+        elif self.config.covariance_type == "full":
+            for state in range(
+                covariances.shape[0]
+            ):
+                covariance = (
+                    covariances[state]
+                    + covariances[state].T
+                ) * 0.5
+
+                eigenvalues, eigenvectors = np.linalg.eigh(
+                    covariance
+                )
+
+                if not np.isfinite(
+                    eigenvalues
+                ).all():
+                    raise HMMError(
+                        "HMM covariance eigenvalues are "
+                        "non-finite."
+                    )
+
+                eigenvalues = np.maximum(
+                    eigenvalues,
+                    floor,
+                )
+
+                covariances[state] = (
+                    eigenvectors
+                    @ np.diag(eigenvalues)
+                    @ eigenvectors.T
+                )
+
+        else:
+            raise HMMError(
+                "Unsupported covariance type."
+            )
+
+        self._model.covars_ = covariances
+
     def _validate_fitted_covariances(
         self,
     ) -> None:
@@ -395,8 +484,35 @@ class HMMRegimeDetector:
                     )
 
         elif self.config.covariance_type == "diag":
+            # hmmlearn may expose diagonal covariances as expanded
+            # square matrices. Off-diagonal entries are intentionally
+            # zero for a diagonal covariance and must not be treated
+            # as invalid variances. Validate only the diagonal values.
+            if covariances.ndim == 3:
+                diagonal_variances = np.diagonal(
+                    covariances,
+                    axis1=1,
+                    axis2=2,
+                )
+            elif covariances.ndim == 2:
+                diagonal_variances = covariances
+            else:
+                raise HMMError(
+                    "HMM diagonal covariance has an invalid shape."
+                )
+
             if (
-                covariances <= 0
+                not np.isfinite(
+                    diagonal_variances
+                ).all()
+            ):
+                raise HMMError(
+                    "HMM diagonal covariance contains "
+                    "non-finite values."
+                )
+
+            if (
+                diagonal_variances <= 0
             ).any():
                 raise HMMError(
                     "HMM diagonal covariance contains "
@@ -643,6 +759,16 @@ class HMMRegimeDetector:
                 "tol must be greater than zero."
             )
 
+        if not np.isfinite(config.min_covar):
+            raise HMMError(
+                "min_covar must be finite."
+            )
+
+        if config.min_covar <= 0:
+            raise HMMError(
+                "min_covar must be greater than zero."
+            )
+
     @staticmethod
     def _validate_observations(
         observations: pd.DataFrame | np.ndarray,
@@ -747,6 +873,7 @@ def fit_hmm(
     n_iter: int = 300,
     tol: float = 1e-4,
     random_state: int = 42,
+    min_covar: float = 1e-6,
 ) -> HMMRegimeDetector:
     """Create and fit the HMM regime detector."""
 
@@ -756,6 +883,7 @@ def fit_hmm(
         n_iter=n_iter,
         tol=tol,
         random_state=random_state,
+        min_covar=min_covar,
     )
 
     detector = HMMRegimeDetector(
