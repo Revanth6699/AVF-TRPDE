@@ -4,6 +4,7 @@ import Overview from "./pages/Overview";
 import Datasets from "./pages/Datasets";
 import Experiments from "./pages/Experiments";
 import Forecasts from "./pages/Forecasts";
+import Risk from "./pages/Risk";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -42,30 +43,12 @@ function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Overview />} />
-
-          <Route path="/datasets" element={<Datasets />} />
-
-          <Route
-            path="/experiments"
-            element={<Experiments />}
-          />
-
-          <Route path="/forecasts" element={<Forecasts />} />
-
-          <Route
-            path="/risk"
-            element={<PlaceholderPage title="Tail Risk Engine" />}
-          />
-
-          <Route
-            path="/portfolios"
-            element={<PlaceholderPage title="Portfolio Analysis" />}
-          />
-
-          <Route
-            path="/reports"
-            element={<PlaceholderPage title="Research Reports" />}
-          />
+	  <Route path="/datasets" element={<Datasets />} />
+	  <Route path="/experiments" element={<Experiments />} />
+	  <Route path="/forecasts" element={<Forecasts />} />
+	  <Route path="/risk" element={<Risk />} />
+	  <Route path="/portfolios" element={<PlaceholderPage title="Portfolios" />} />
+	  <Route path="/reports" element={<PlaceholderPage title="Reports" />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
