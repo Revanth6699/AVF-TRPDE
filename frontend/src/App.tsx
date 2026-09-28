@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "./components/layout/AppShell";
 import Overview from "./pages/Overview";
+import Datasets from "./pages/Datasets";
+import Experiments from "./pages/Experiments";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -8,7 +10,9 @@ function PlaceholderPage({ title }: { title: string }) {
       <div className="page-header">
         <div className="page-header-copy">
           <div className="page-eyebrow">AVF-TRPDE</div>
+
           <h1>{title}</h1>
+
           <p className="page-description">
             This research module is being connected to the AVF-TRPDE backend.
           </p>
@@ -19,6 +23,7 @@ function PlaceholderPage({ title }: { title: string }) {
         <div className="state">
           <div>
             <h2 className="state-title">Module ready</h2>
+
             <p className="state-description">
               Research outputs will appear here when the corresponding
               backend workflow produces them.
@@ -37,14 +42,11 @@ function App() {
         <Routes>
           <Route path="/" element={<Overview />} />
 
-          <Route
-            path="/datasets"
-            element={<PlaceholderPage title="Datasets" />}
-          />
+          <Route path="/datasets" element={<Datasets />} />
 
           <Route
             path="/experiments"
-            element={<PlaceholderPage title="Experiments" />}
+            element={<Experiments />}
           />
 
           <Route
