@@ -3,6 +3,7 @@ import AppShell from "./components/layout/AppShell";
 import Overview from "./pages/Overview";
 import Datasets from "./pages/Datasets";
 import Experiments from "./pages/Experiments";
+import Forecasts from "./pages/Forecasts";
 
 function PlaceholderPage({ title }: { title: string }) {
   return (
@@ -49,10 +50,7 @@ function App() {
             element={<Experiments />}
           />
 
-          <Route
-            path="/forecasts"
-            element={<PlaceholderPage title="Volatility Forecasts" />}
-          />
+          <Route path="/forecasts" element={<Forecasts />} />
 
           <Route
             path="/risk"
