@@ -14,8 +14,8 @@ import {
   Target,
   X,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
-import { apiClient } from "../api/client";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";import { apiClient } from "../api/client";
 
 type RiskPoint = {
   timestamp: string;
@@ -1037,7 +1037,7 @@ export default function Risk() {
                   RISK CONFIGURATION
                 </div>
 
-                <h2>Configure risk analysis</h2>
+                <h2>Configure Risk Analysis</h2>
 
                 <p>
                   Define the research context used by the

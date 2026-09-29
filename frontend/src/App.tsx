@@ -5,37 +5,9 @@ import Datasets from "./pages/Datasets";
 import Experiments from "./pages/Experiments";
 import Forecasts from "./pages/Forecasts";
 import Risk from "./pages/Risk";
+import Portfolios from "./pages/Portfolios";
+import Reports from "./pages/Reports";
 
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <section className="page">
-      <div className="page-header">
-        <div className="page-header-copy">
-          <div className="page-eyebrow">AVF-TRPDE</div>
-
-          <h1>{title}</h1>
-
-          <p className="page-description">
-            This research module is being connected to the AVF-TRPDE backend.
-          </p>
-        </div>
-      </div>
-
-      <div className="surface surface-padding">
-        <div className="state">
-          <div>
-            <h2 className="state-title">Module ready</h2>
-
-            <p className="state-description">
-              Research outputs will appear here when the corresponding
-              backend workflow produces them.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function App() {
   return (
@@ -43,12 +15,12 @@ function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Overview />} />
-	  <Route path="/datasets" element={<Datasets />} />
-	  <Route path="/experiments" element={<Experiments />} />
-	  <Route path="/forecasts" element={<Forecasts />} />
-	  <Route path="/risk" element={<Risk />} />
-	  <Route path="/portfolios" element={<PlaceholderPage title="Portfolios" />} />
-	  <Route path="/reports" element={<PlaceholderPage title="Reports" />} />
+          <Route path="/datasets" element={<Datasets />} />
+          <Route path="/experiments" element={<Experiments />} />
+          <Route path="/forecasts" element={<Forecasts />} />
+          <Route path="/risk" element={<Risk />} />
+          <Route path="/portfolios" element={<Portfolios />} />
+          <Route path="/reports" element={<Reports/>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
