@@ -2,7 +2,6 @@ import {
   Activity,
   AlertCircle,
   BarChart3,
-  CalendarRange,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -410,10 +409,6 @@ export default function Forecasts() {
 
   const latestPoint = forecast?.forecasts.at(-1);
 
-  const actualCount =
-    forecast?.forecasts.filter(
-      (point) => point.actual_volatility !== null,
-    ).length ?? 0;
 
   const handleLoadForecast = async () => {
     if (!experimentName.trim()) {

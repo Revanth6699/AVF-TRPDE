@@ -1,7 +1,6 @@
 import {
   Beaker,
-  Check,
-  ChevronRight,
+  Check,  
   CircleAlert,
   FlaskConical,
   Play,
