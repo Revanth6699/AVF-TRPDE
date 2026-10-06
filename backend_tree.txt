@@ -1,0 +1,223 @@
+Folder PATH listing
+Volume serial number is A43F-BC14
+D:\MY_PROJECTS\AVF-TRPDE\BACKEND
++---app
+|   |   main.py
+|   |   storage.py
+|   |   
+|   +---api
+|   |   \---v1
+|   |       |   datasets.py
+|   |       |   experiments.py
+|   |       |   forecasts.py
+|   |       |   portfolios.py
+|   |       |   reports.py
+|   |       |   risk.py
+|   |       |   
+|   |       \---__pycache__
+|   |               datasets.cpython-310.pyc
+|   |               datasets.cpython-312.pyc
+|   |               experiments.cpython-310.pyc
+|   |               experiments.cpython-312.pyc
+|   |               forecasts.cpython-310.pyc
+|   |               forecasts.cpython-312.pyc
+|   |               portfolios.cpython-310.pyc
+|   |               portfolios.cpython-312.pyc
+|   |               reports.cpython-310.pyc
+|   |               reports.cpython-312.pyc
+|   |               risk.cpython-310.pyc
+|   |               risk.cpython-312.pyc
+|   |               
+|   +---core
+|   |   |   config.py
+|   |   |   exceptions.py
+|   |   |   logging.py
+|   |   |   
+|   |   \---__pycache__
+|   |           config.cpython-312.pyc
+|   |           exceptions.cpython-312.pyc
+|   |           logging.cpython-312.pyc
+|   |           
+|   +---data
+|   |   |   canonical.py
+|   |   |   fingerprint.py
+|   |   |   validation.py
+|   |   |   
+|   |   +---loaders
+|   |   |   |   csv.py
+|   |   |   |   parquet.py
+|   |   |   |   twelve_data.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           csv.cpython-310.pyc
+|   |   |           csv.cpython-312.pyc
+|   |   |           parquet.cpython-310.pyc
+|   |   |           parquet.cpython-312.pyc
+|   |   |           twelve_data.cpython-310.pyc
+|   |   |           twelve_data.cpython-312.pyc
+|   |   |           
+|   |   \---__pycache__
+|   |           canonical.cpython-310.pyc
+|   |           canonical.cpython-312.pyc
+|   |           fingerprint.cpython-310.pyc
+|   |           fingerprint.cpython-312.pyc
+|   |           validation.cpython-310.pyc
+|   |           validation.cpython-312.pyc
+|   |           
+|   +---experiments
+|   |   |   artifacts.py
+|   |   |   configuration.py
+|   |   |   runner.py
+|   |   |   
+|   |   \---__pycache__
+|   |           artifacts.cpython-312.pyc
+|   |           configuration.cpython-310.pyc
+|   |           configuration.cpython-312.pyc
+|   |           runner.cpython-310.pyc
+|   |           runner.cpython-312.pyc
+|   |           
+|   +---portfolio
+|   |   |   constraints.py
+|   |   |   costs.py
+|   |   |   portfolio.py
+|   |   |   risk_targeting.py
+|   |   |   
+|   |   \---__pycache__
+|   |           constraints.cpython-312.pyc
+|   |           costs.cpython-312.pyc
+|   |           portfolio.cpython-312.pyc
+|   |           risk_targeting.cpython-312.pyc
+|   |           
+|   +---research
+|   |   +---evaluation
+|   |   |   |   bootstrap.py
+|   |   |   |   diebold_mariano.py
+|   |   |   |   forecast_metrics.py
+|   |   |   |   mcs.py
+|   |   |   |   model_confidence_set.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           bootstrap.cpython-312.pyc
+|   |   |           diebold_mariano.cpython-312.pyc
+|   |   |           forecast_metrics.cpython-312.pyc
+|   |   |           mcs.cpython-312.pyc
+|   |   |           model_confidence_set.cpython-312.pyc
+|   |   |           
+|   |   +---features
+|   |   |   |   cross_asset.py
+|   |   |   |   garch_features.py
+|   |   |   |   lagged.py
+|   |   |   |   rolling.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           cross_asset.cpython-312.pyc
+|   |   |           garch_features.cpython-312.pyc
+|   |   |           lagged.cpython-312.pyc
+|   |   |           rolling.cpython-312.pyc
+|   |   |           
+|   |   +---models
+|   |   |   |   ewma.py
+|   |   |   |   gjr_garch.py
+|   |   |   |   xgboost.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           ewma.cpython-312.pyc
+|   |   |           gjr_garch.cpython-312.pyc
+|   |   |           xgboost.cpython-312.pyc
+|   |   |           
+|   |   +---regimes
+|   |   |   |   hmm.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           hmm.cpython-312.pyc
+|   |   |           
+|   |   +---regime_models
+|   |   |   |   regime_xgboost.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           regime_xgboost.cpython-312.pyc
+|   |   |           
+|   |   +---volatility
+|   |   |   |   realized.py
+|   |   |   |   target.py
+|   |   |   |   
+|   |   |   \---__pycache__
+|   |   |           realized.cpython-312.pyc
+|   |   |           target.cpython-312.pyc
+|   |   |           
+|   |   \---walk_forward
+|   |       |   fold.py
+|   |       |   runner.py
+|   |       |   splitter.py
+|   |       |   
+|   |       \---__pycache__
+|   |               fold.cpython-312.pyc
+|   |               runner.cpython-312.pyc
+|   |               splitter.cpython-312.pyc
+|   |               
+|   +---risk
+|   |   |   backtesting.py
+|   |   |   christoffersen.py
+|   |   |   expected_shortfall.py
+|   |   |   filtered_historical.py
+|   |   |   kupiec.py
+|   |   |   var.py
+|   |   |   
+|   |   \---__pycache__
+|   |           backtesting.cpython-312.pyc
+|   |           christoffersen.cpython-312.pyc
+|   |           expected_shortfall.cpython-312.pyc
+|   |           filtered_historical.cpython-312.pyc
+|   |           kupiec.cpython-312.pyc
+|   |           var.cpython-312.pyc
+|   |           
+|   +---schemas
+|   |   |   dataset.py
+|   |   |   experiment.py
+|   |   |   forecast.py
+|   |   |   portfolio.py
+|   |   |   report.py
+|   |   |   risk.py
+|   |   |   
+|   |   \---__pycache__
+|   |           dataset.cpython-310.pyc
+|   |           dataset.cpython-312.pyc
+|   |           experiment.cpython-310.pyc
+|   |           experiment.cpython-312.pyc
+|   |           forecast.cpython-310.pyc
+|   |           forecast.cpython-312.pyc
+|   |           portfolio.cpython-310.pyc
+|   |           portfolio.cpython-312.pyc
+|   |           report.cpython-310.pyc
+|   |           report.cpython-312.pyc
+|   |           risk.cpython-310.pyc
+|   |           risk.cpython-312.pyc
+|   |           
+|   +---stress
+|   |   |   analysis.py
+|   |   |   runner.py
+|   |   |   scenarios.py
+|   |   |   
+|   |   \---__pycache__
+|   |           analysis.cpython-312.pyc
+|   |           runner.cpython-312.pyc
+|   |           scenarios.cpython-312.pyc
+|   |           
+|   \---__pycache__
+|           main.cpython-310.pyc
+|           main.cpython-312.pyc
+|           storage.cpython-312.pyc
+|           
+\---tests
+    |   test_data_availability.py
+    |   test_data_download.py
+    |   test_twelve_data.py
+    |   
+    \---__pycache__
+            test_data_availability.cpython-310-pytest-9.0.2.pyc
+            test_data_availability.cpython-312-pytest-9.1.1.pyc
+            test_data_download.cpython-310-pytest-9.0.2.pyc
+            test_data_download.cpython-312-pytest-9.1.1.pyc
+            test_twelve_data.cpython-310-pytest-9.0.2.pyc
+            test_twelve_data.cpython-312-pytest-9.1.1.pyc
+            
