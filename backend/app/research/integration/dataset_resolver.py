@@ -286,10 +286,15 @@ def _merge_realized_volatility(
 
     realized = realized.copy()
 
-    realized["trading_date"] = pd.to_datetime(
-        realized["trading_date"],
-        errors="coerce",
-    ).dt.normalize()
+    realized["trading_date"] = (
+        pd.to_datetime(
+            realized["trading_date"],
+            errors="coerce",
+            utc=True,
+        )
+        .dt.tz_localize(None)
+        .dt.normalize()
+    )
 
     dataframe = dataframe.copy()
 
@@ -381,10 +386,15 @@ def _prepare_target(
             "no observations."
         )
 
-    targeted["trading_date"] = pd.to_datetime(
-        targeted["trading_date"],
-        errors="coerce",
-    ).dt.normalize()
+    targeted["trading_date"] = (
+        pd.to_datetime(
+            targeted["trading_date"],
+            errors="coerce",
+            utc=True,
+        )
+        .dt.tz_localize(None)
+        .dt.normalize()
+    )
 
     dataframe["trading_date"] = (
         dataframe["timestamp"]

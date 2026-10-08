@@ -22,6 +22,7 @@ MAX_POINTS_PER_REQUEST = 5_000
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_DELAY_SECONDS = 2.0
+DEFAULT_REQUEST_INTERVAL_SECONDS = 9.0
 
 SUPPORTED_INTERVALS = {
     "1min",
@@ -70,6 +71,7 @@ class TwelveDataConfig:
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     max_retries: int = DEFAULT_MAX_RETRIES
     retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS
+    request_interval_seconds: float = DEFAULT_REQUEST_INTERVAL_SECONDS
 
     @classmethod
     def from_environment(cls) -> "TwelveDataConfig":
@@ -240,9 +242,18 @@ class TwelveDataClient:
         url = f"{TIME_SERIES_ENDPOINT}?{urlencode(params)}"
 
         last_error: Exception | None = None
+        last_request_time: float | None = None
 
         for attempt in range(self.config.max_retries + 1):
             try:
+                if last_request_time is not None:
+                    elapsed = time.monotonic() - last_request_time
+                    remaining = self.config.request_interval_seconds - elapsed
+                    if remaining > 0:
+                        time.sleep(remaining)
+
+                last_request_time = time.monotonic()
+
                 request = Request(
                     url,
                     headers={
