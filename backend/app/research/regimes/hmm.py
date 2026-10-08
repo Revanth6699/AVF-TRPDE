@@ -562,23 +562,36 @@ class HMMRegimeDetector:
         for index, observation in enumerate(
             observations
         ):
-            emission = self._emission_probabilities(
+            emission_log_probabilities = self._emission_log_probabilities(
                 observation
             )
 
-            current = previous * emission
-
-            total = float(
-                current.sum()
+            previous_log_probabilities = np.full(
+                n_states,
+                -np.inf,
+                dtype=float,
             )
-
-            if not np.isfinite(total) or total <= 0:
-                raise HMMError(
-                    "HMM filtering produced an invalid "
-                    "probability normalization."
+            positive_previous = previous > 0
+            if positive_previous.any():
+                previous_log_probabilities[positive_previous] = np.log(
+                    previous[positive_previous]
                 )
 
-            current /= total
+            log_current = previous_log_probabilities + emission_log_probabilities
+            maximum = float(np.max(log_current))
+            if not np.isfinite(maximum):
+                raise HMMError(
+                    "HMM filtering produced an invalid probability normalization."
+                )
+
+            weights = np.exp(log_current - maximum)
+            total = float(weights.sum())
+            if not np.isfinite(total) or total <= 0:
+                raise HMMError(
+                    "HMM filtering produced an invalid probability normalization."
+                )
+
+            current = weights / total
 
             probabilities[index] = current
 
@@ -609,6 +622,47 @@ class HMMRegimeDetector:
             )
 
         return propagated / total
+
+    def _emission_log_probabilities(
+        self,
+        observation: np.ndarray,
+    ) -> np.ndarray:
+        """Calculate Gaussian emission log-probabilities stably."""
+        means = np.asarray(self._model.means_, dtype=float)
+        covariance = np.asarray(self._model.covars_, dtype=float)
+        n_states = self.config.n_components
+        log_probabilities = np.empty(n_states, dtype=float)
+
+        for state in range(n_states):
+            mean = means[state]
+            if self.config.covariance_type == "full":
+                covariance_matrix = covariance[state]
+            elif self.config.covariance_type == "diag":
+                covariance_matrix = np.diag(covariance[state])
+            else:
+                raise HMMError("Unsupported covariance type.")
+
+            covariance_matrix = covariance_matrix + np.eye(covariance_matrix.shape[0]) * 1e-12
+            sign, log_determinant = np.linalg.slogdet(covariance_matrix)
+            if sign <= 0 or not np.isfinite(log_determinant):
+                raise HMMError("HMM covariance matrix is not positive definite.")
+
+            difference = observation - mean
+            try:
+                solved = np.linalg.solve(covariance_matrix, difference)
+            except np.linalg.LinAlgError as exc:
+                raise HMMError("HMM covariance matrix could not be solved.") from exc
+
+            quadratic = float(difference @ solved)
+            log_probabilities[state] = -0.5 * (
+                len(observation) * np.log(2.0 * np.pi)
+                + log_determinant
+                + quadratic
+            )
+
+        if not np.isfinite(log_probabilities).all():
+            raise HMMError("HMM emission log-probabilities are non-finite.")
+        return log_probabilities
 
     def _emission_probabilities(
         self,
