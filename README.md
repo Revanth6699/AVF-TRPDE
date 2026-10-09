@@ -1,706 +1,222 @@
-**AVF-TRPDE** is a research-grade quantitative finance system for evaluating volatility forecasting models, latent market regimes, tail-risk measures, and risk-driven portfolio decisions through strict out-of-sample validation.
-
-> **Research question:**  
-> Does incorporating latent regime information into an ML volatility forecasting model provide statistically significant and economically meaningful improvement over established volatility models and a non-regime ML baseline?
-
----
-
-## Project Status
-
-The project is currently in the **core quantitative research pipeline construction stage**.
-
-### Implemented and smoke-tested
-
-- Data ingestion and validation
-- Canonical dataset construction
-- Dataset fingerprinting
-- Realized volatility construction from intraday data
-- Next-day volatility target construction
-- Lagged features
-- Rolling features
-- Cross-asset features
-- GARCH feature integration
-- EWMA
-- GJR-GARCH
-- XGBoost
-- HMM regime detection
-- Regime-Aware XGBoost
-- MAE
-- RMSE
-- QLIKE
-- Diebold-Mariano test
-
-### Remaining research pipeline
-
-- Bootstrap confidence intervals
-- Model Confidence Set (MCS)
-- Walk-forward validation engine
-- Filtered Historical Simulation
-- VaR 95% / 99%
-- Expected Shortfall
-- Kupiec backtesting
-- Christoffersen backtesting
-- Portfolio risk targeting
-- Position and turnover constraints
-- Transaction costs
-- Stress testing
-- Cross-asset analysis
-- Failure analysis
-- Research conclusion
-- API, schemas, and dashboard integration
-
-Synthetic smoke-test outputs are used only to verify implementation correctness. They are **not research findings or model-performance claims**.
-
----
-
-## Core Architecture
-
-```text
-USER / RESEARCHER
-        ↓
-APPLICATION INTERFACE
-   FastAPI / React
-        ↓
-RESEARCH ORCHESTRATOR
-        ↓
-DATA INPUT LAYER
- CSV / Parquet
-        ↓
-SCHEMA VALIDATION
-        ↓
-CANONICAL DATASET
-        ↓
-DATASET FINGERPRINT
-        ↓
-REALIZED VOLATILITY ENGINE
-        ↓
-FEATURE ENGINEERING
-        ↓
-WALK-FORWARD ENGINE
-        ↓
-EWMA / GJR-GARCH / XGBoost
-        ↓
-HMM → Regime probabilities → Regime-XGBoost
-        ↓
-FORECAST EVALUATION
-        ↓
-DM / Bootstrap / MCS
-        ↓
-FHS → VaR / ES
-        ↓
-Kupiec / Christoffersen
-        ↓
-PORTFOLIO ENGINE
-        ↓
-Risk targeting → constraints → transaction costs
-        ↓
-Stress testing
-        ↓
-Cross-asset analysis
-        ↓
-Failure analysis
-        ↓
-Research verdict
-        ↓
-Reports / Dashboard
-```
+# Adaptive Volatility Forecasting, Tail-Risk & Portfolio Decision Engine (AVF-TRPDE)
 
----
+AVF-TRPDE is a quantitative finance and machine learning project focused on forecasting market volatility, identifying changing market regimes, measuring portfolio tail risk, and evaluating risk-targeted portfolio decisions.
 
-## Model Set
+The project brings together statistical volatility models, machine learning, regime detection, risk backtesting, and portfolio analysis in a single research workflow. The objective is to study how volatility forecasts and market conditions affect risk estimates and portfolio decisions across financial assets.
 
-AVF-TRPDE uses the following locked model set:
+## Research Objective
 
-### EWMA
+Volatility is not constant over time. Financial markets move through periods of relatively stable conditions, elevated uncertainty, and sharp changes in risk. A model that performs well in one market environment may behave differently in another.
 
-Exponentially Weighted Moving Average volatility:
+AVF-TRPDE investigates whether combining volatility forecasts with market-regime information can improve risk estimation and portfolio decision-making compared with simpler statistical baselines.
 
-\[
-\sigma_t^2 =
-\lambda\sigma_{t-1}^2 +
-(1-\lambda)r_{t-1}^2
-\]
+The focus is not just on producing a forecast. It is on evaluating the forecast, measuring the risk associated with it, and examining whether the resulting portfolio decisions remain defensible under different market conditions.
 
-### GJR-GARCH
+## Model Architecture
 
-The GJR-GARCH model captures volatility clustering, persistence, and asymmetric response to negative returns:
+The project uses the following models and methods.
 
-\[
-\sigma_t^2 =
-\omega +
-\alpha\epsilon_{t-1}^2 +
-\gamma I_{t-1}\epsilon_{t-1}^2 +
-\beta\sigma_{t-1}^2
-\]
+| Component | Model or method | Purpose |
+|---|---|---|
+| Volatility baseline | EWMA | Estimates changing volatility using exponentially weighted historical observations. |
+| Conditional volatility | GJR-GARCH | Models volatility clustering and asymmetric responses to positive and negative returns. |
+| Machine learning | XGBoost | Learns nonlinear relationships in engineered financial features. |
+| Market regimes | Hidden Markov Model (HMM) | Estimates latent market states from observed financial data. |
+| Regime-aware forecasting | Regime-Aware XGBoost | Incorporates estimated regime information into volatility forecasting. |
+| Tail-risk measurement | VaR and Expected Shortfall | Quantifies portfolio losses at specified confidence levels and beyond the VaR threshold. |
+| Risk backtesting | Kupiec and Christoffersen tests | Evaluates VaR exception frequency and the independence of exceptions. |
+| Portfolio evaluation | Static and model-driven risk-targeted portfolios | Compares portfolio outcomes under defined sizing constraints and transaction costs. |
 
-where:
+These components serve different purposes. EWMA and GJR-GARCH provide statistical volatility estimates, XGBoost models nonlinear relationships, and HMM estimates latent market regimes. The regime-aware model investigates whether regime information adds predictive value.
 
-\[
-I_{t-1}=1
-\]
+## Risk Measurement
 
-when the previous innovation is negative.
+The risk engine evaluates portfolio losses using Value at Risk and Expected Shortfall.
 
-### XGBoost
+### Value at Risk (VaR)
 
-XGBoost forecasts next-period realized volatility using information available at time \(t\), including:
+VaR estimates a loss threshold at a selected confidence level over a specified horizon.
 
-- Lagged returns
-- Rolling volatility
-- Volume
-- Price range
-- Momentum
-- Cross-asset information
-- GJR-GARCH forecast
+The project evaluates VaR at:
 
-### HMM
+- 95% confidence level
+- 99% confidence level
 
-A Hidden Markov Model detects latent market regimes.
+VaR is a quantile-based risk measure. It does not describe the magnitude of losses beyond the estimated threshold.
 
-The regime detector produces:
+### Expected Shortfall (ES)
 
-\[
-P(S_t=k\mid O_{1:t})
-\]
+Expected Shortfall measures the average loss in the tail beyond the corresponding VaR threshold, subject to the project's loss convention and estimation method.
 
-where \(S_t\) represents the latent market regime.
+Together, VaR and ES provide complementary views of portfolio downside risk.
 
-The HMM is fitted inside each walk-forward training fold to prevent look-ahead leakage.
+### VaR Backtesting
 
-### Regime-Aware XGBoost
+Two statistical tests are included in the risk-validation framework:
 
-The regime-aware model extends XGBoost with HMM regime probabilities:
+- **Kupiec test:** Evaluates whether the observed frequency of VaR violations is consistent with the expected exception rate.
+- **Christoffersen test:** Evaluates the independence of VaR violations and helps identify clustering in exceptions.
 
-```text
-Market features
-      +
-GJR-GARCH forecast
-      +
-HMM regime probabilities
-      ↓
-Regime-Aware XGBoost
-```
+Passing a backtest does not guarantee that a risk model will remain accurate under future market conditions. Results must be interpreted alongside the sample size, forecast horizon, and market environment.
 
----
+## Portfolio Decision Engine
 
-## Ablation Design
+The portfolio component compares two approaches:
 
-The locked ablation framework contains:
+**Static portfolio**
 
-```text
-A0 = XGBoost
+A reference portfolio used to establish a consistent comparison point.
 
-A1 = XGBoost + GARCH forecast
+**Model-driven risk-targeted portfolio**
 
-A2 = XGBoost + HMM probabilities
+A portfolio whose sizing responds to model-derived risk estimates, subject to the project's mathematical constraints and transaction-cost assumptions.
 
-A3 = XGBoost + GARCH + HMM
-```
+The comparison examines how risk estimates translate into portfolio exposure and how changes in exposure affect realized portfolio outcomes.
 
-This allows the contribution of GARCH information and regime information to be evaluated separately.
+Transaction costs are included because portfolio turnover can reduce the practical benefit of a strategy that appears attractive before costs.
 
----
+The portfolio analysis is intended to evaluate model-driven decisions rather than assume that improved forecasts automatically produce better investment results.
 
-## Realized Volatility
+## Validation Methodology
 
-Intraday returns are used to construct daily realized volatility.
+Financial time series require careful validation because observations are ordered in time and future information must not enter past predictions.
 
-For intraday log returns \(r_{t,j}\):
+AVF-TRPDE uses a validation framework designed around the following principles.
 
-\[
-RV_t = \sum_{j=1}^{M_t} r_{t,j}^2
-\]
+### Walk-Forward Validation
 
-and:
+Models are evaluated across successive chronological folds. Training uses information available before each evaluation period, and forecasts are assessed on subsequent observations.
 
-\[
-RVOL_t = \sqrt{RV_t}
-\]
+### Regime Analysis
 
-The next-day realized volatility is used as the machine-learning forecasting target:
+Forecast and risk behavior are examined across estimated market regimes to investigate whether performance varies with market conditions.
 
-\[
-y_{t+1}=RVOL_{t+1}
-\]
+### Ablation Analysis
 
-Intraday data is used for target construction, not for high-frequency trading.
+Individual model components are compared to assess whether regime information and other selected features contribute meaningful value.
 
----
+### Cross-Asset Validation
 
-## Forecast Evaluation
+Models are evaluated across multiple assets to examine whether results generalize beyond a single financial instrument.
 
-The project evaluates forecasts using:
+### Stress Testing
 
-### MAE
+Stress scenarios are used to examine portfolio and risk behavior under adverse market conditions. Stress-test outcomes are scenario-dependent and should not be interpreted as predictions of future losses.
 
-\[
-MAE =
-\frac{1}{N}
-\sum_{t=1}^{N}
-|y_t-\hat y_t|
-\]
+### Statistical Significance
 
-### RMSE
+Forecast comparisons should distinguish observed performance differences from differences that are supported by appropriate statistical evidence.
 
-\[
-RMSE =
-\sqrt{
-\frac{1}{N}
-\sum_{t=1}^{N}
-(y_t-\hat y_t)^2
-}
-\]
+## Preventing Data Leakage
 
-### QLIKE
+Leakage is a central concern in financial forecasting. A model can appear accurate when its features, targets, or validation process contain information that would not have been available at prediction time.
 
-\[
-QLIKE =
-\frac{1}{N}
-\sum_{t=1}^{N}
-\left(
-\frac{y_t}{\hat y_t}
--
-\log\frac{y_t}{\hat y_t}
--
-1
-\right)
-\]
+The project addresses the following risks:
 
-Lower forecast loss indicates better forecast performance for these metrics.
+- **Chronological leakage:** Future observations must not enter training data for an earlier forecast.
+- **Feature leakage:** Features must be constructed using information available at the forecast origin.
+- **Regime-probability leakage:** HMM state probabilities used for forecasting must be estimated without access to future evaluation observations.
+- **Target definition:** The realized-volatility target and its forecast horizon must be defined consistently with the intended prediction task.
+- **Walk-forward estimation:** Model fitting and HMM re-estimation must respect the boundaries of each training fold.
+- **Evaluation integrity:** Model selection must not use held-out test results as though they were available during training.
 
----
+These controls are necessary for credible evaluation. Their effectiveness depends on the implementation and should be verified through tests and inspection of the complete pipeline.
 
-## Statistical Comparison
+## Data
 
-The project uses:
+The project uses historical financial time series for volatility estimation, regime analysis, risk measurement, and portfolio evaluation.
 
-- Diebold-Mariano test
-- Bootstrap confidence intervals
-- Model Confidence Set
+Depending on the configured data source and available instruments, relevant inputs may include:
 
-The Diebold-Mariano framework compares the loss differential between two forecasting models:
+- Historical asset prices
+- Calculated returns
+- Volatility-related features
+- Cross-asset observations
+- Market data used to construct model features
 
-\[
-d_t=L(e_{A,t})-L(e_{B,t})
-\]
-
-with:
-
-\[
-H_0:E[d_t]=0
-\]
-
-The purpose is to test whether forecast-performance differences are statistically distinguishable rather than relying only on point estimates.
-
----
-
-## Tail Risk
-
-Tail-risk estimation uses **Filtered Historical Simulation (FHS)**.
-
-Standardized returns are calculated as:
-
-\[
-z_t=\frac{r_t}{\hat\sigma_t}
-\]
-
-The empirical standardized-return distribution is then combined with the current volatility forecast.
-
-The project evaluates:
-
-- VaR 95%
-- VaR 99%
-- Expected Shortfall 95%
-
-Risk forecasts are backtested using:
-
-- Kupiec unconditional coverage test
-- Christoffersen independence / clustering test
-
----
-
-## Portfolio Decision Layer
-
-The portfolio layer evaluates:
-
-- Static / Buy & Hold
-- EWMA risk targeting
-- GJR-GARCH risk targeting
-- XGBoost risk targeting
-- Regime-XGBoost risk targeting
-
-Risk targeting follows:
-
-\[
-w_{i,t}
-=
-w_{i,base}
-\frac{\sigma_{target}}
-{\hat\sigma_{i,t}}
-\]
-
-with position constraints:
-
-\[
-|w_{i,t}|\leq w_{i,max}
-\]
-
-and turnover:
-
-\[
-Turnover_t
-=
-\sum_i |w_{i,t}-w_{i,t-1}|
-\]
-
-Transaction costs are incorporated as:
-
-\[
-TC_t=c\times Turnover_t
-\]
-
-and net portfolio return:
-
-\[
-R_t^{net}=R_t^{gross}-TC_t
-\]
-
-Portfolio evaluation includes:
-
-- Return
-- Volatility
-- Sharpe ratio
-- Sortino ratio
-- Maximum drawdown
-- Calmar ratio
-- VaR
-- Expected Shortfall
-- Turnover
-- Transaction costs
-- Gross P&L
-- Net P&L
-
----
-
-## Walk-Forward Validation
-
-The project does **not** use a random train/test split for the research evaluation.
-
-Each walk-forward fold follows:
-
-```text
-Historical training window
-        ↓
-Fit preprocessing
-        ↓
-Fit GJR-GARCH
-        ↓
-Generate GARCH features
-        ↓
-Fit HMM
-        ↓
-Generate regime probabilities
-        ↓
-Build XGBoost data
-        ↓
-Train XGBoost
-        ↓
-Train Regime-XGBoost
-        ↓
-Generate out-of-sample forecasts
-        ↓
-Move the window forward
-        ↓
-Repeat
-```
-
-The HMM is re-estimated inside each training fold.
-
-No future information is allowed to enter preprocessing, GARCH estimation, HMM estimation, model training, or hyperparameter selection.
-
----
-
-## Data Requirements
-
-### Daily data
-
-Minimum requirement:
-
-- At least 8 years
-- `timestamp`
-- `asset_id`
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
-
-### Intraday data
-
-Minimum requirement:
-
-- At least 3 years
-- `timestamp`
-- `asset_id`
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
-
-Intraday data is primarily used to construct the realized-volatility target.
-
----
+The exact assets, date ranges, data sources, and available observations should be taken from the project's configured datasets and data-ingestion code. Results should not be interpreted without documenting the data used to produce them.
 
 ## Technology Stack
 
-### Backend / Research
+The project is implemented in Python and uses quantitative analysis and machine learning libraries for model development, evaluation, and risk calculations.
 
-- Python 3.11+
-- NumPy
-- Pandas
-- SciPy
-- arch
-- scikit-learn
-- XGBoost
-- hmmlearn
+The implementation includes model-specific components, shared utilities, a runner, and validation-related modules.
 
-### Data
+The exact package versions and installation requirements are maintained in the repository's dependency files.
 
-- CSV
-- Parquet
-- DuckDB
+## Project Status
 
-### API
+The tail-risk engine, including VaR and Expected Shortfall functionality, is completed. Stress testing is also completed.
 
-- FastAPI
-- Pydantic
+Other components should be considered complete only where their implementations and validation results support that status. The presence of a model module or a successful smoke test alone does not establish that the complete forecasting and portfolio workflow has been validated.
 
-### Frontend
+## Running the Project
 
-- React
-- TypeScript
-- Vite
-- Plotly
+Clone the repository:
 
-### Configuration / Development
-
-- YAML
-- pytest
-- Black
-- Ruff
-- Git
-- GitHub
-
----
-
-## Project Structure
-
-```text
-adaptive-volatility-risk-engine/
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── api/
-│   │   │   └── v1/
-│   │   │       ├── datasets.py
-│   │   │       ├── experiments.py
-│   │   │       ├── forecasts.py
-│   │   │       ├── risk.py
-│   │   │       ├── portfolios.py
-│   │   │       └── reports.py
-│   │   ├── core/
-│   │   ├── data/
-│   │   │   ├── loaders/
-│   │   │   │   ├── csv.py
-│   │   │   │   └── parquet.py
-│   │   │   ├── validation.py
-│   │   │   ├── canonical.py
-│   │   │   └── fingerprint.py
-│   │   ├── research/
-│   │   │   ├── returns/
-│   │   │   ├── volatility/
-│   │   │   ├── features/
-│   │   │   ├── models/
-│   │   │   ├── regimes/
-│   │   │   ├── regime_models/
-│   │   │   ├── evaluation/
-│   │   │   └── walk_forward/
-│   │   ├── risk/
-│   │   ├── portfolio/
-│   │   ├── stress/
-│   │   ├── experiments/
-│   │   └── schemas/
-│   └── tests/
-│       ├── unit/
-│       ├── integration/
-│       └── research/
-│
-├── frontend/
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   ├── intraday/
-│   ├── realized/
-│   └── samples/
-├── configs/
-├── experiments/
-├── notebooks/
-├── reports/
-├── docs/
-├── storage/
-│   ├── duckdb/
-│   └── metadata/
-├── pyproject.toml
-├── README.md
-├── .env.example
-├── .gitignore
-└── LICENSE
+```bash
+git clone https://github.com/Revanth6699/AVF-TRPDE.git
+cd AVF-TRPDE
 ```
 
----
+Create and activate a virtual environment:
 
-## Data Provider
-
-The current development ingestion uses **Twelve Data** for market OHLCV data.
-
-The API key must be stored locally in `.env` and must not be committed to Git:
-
-```text
-TWELVE_DATA_API_KEY=your_api_key_here
+```bash
+python -m venv .venv
 ```
 
-The repository contains `.env.example` for configuration reference.
+On Windows:
 
----
-
-## Current Research Scope
-
-The project is designed to answer whether latent regime information improves volatility forecasting and downstream risk decisions.
-
-The research progression is:
-
-```text
-Model volatility
-      ↓
-Compare classical and ML forecasts
-      ↓
-Evaluate latent regimes
-      ↓
-Add regime information to ML
-      ↓
-Test statistical significance
-      ↓
-Convert forecasts to VaR / ES
-      ↓
-Backtest tail risk
-      ↓
-Evaluate portfolio decisions
-      ↓
-Include transaction costs
-      ↓
-Stress test
-      ↓
-Cross-asset validation
-      ↓
-Failure analysis
-      ↓
-Research conclusion
+```bash
+.venv\Scripts\activate
 ```
 
-The project does **not** assume that Regime-XGBoost will outperform the baseline models. The final conclusion will be determined by the out-of-sample experimental results.
+On macOS or Linux:
 
----
-
-## Leakage Controls
-
-Temporal integrity is a core requirement.
-
-The following are fitted or generated using only information available at the relevant point in time:
-
-- Preprocessing
-- GJR-GARCH
-- HMM
-- HMM regime probabilities
-- XGBoost
-- Regime-XGBoost
-- Hyperparameter selection
-- Feature generation
-- Portfolio weights
-
-The HMM is never fitted on the full dataset before walk-forward evaluation.
-
----
-
-## Development Status
-
-Current completed research components:
-
-```text
-[✓] Data ingestion
-[✓] Data validation
-[✓] Canonical dataset
-[✓] Dataset fingerprint
-[✓] Realized volatility
-[✓] Target construction
-[✓] Lagged features
-[✓] Rolling features
-[✓] Cross-asset features
-[✓] GARCH features
-[✓] EWMA
-[✓] GJR-GARCH
-[✓] XGBoost
-[✓] HMM
-[✓] Regime-XGBoost
-[✓] MAE
-[✓] RMSE
-[✓] QLIKE
-[✓] Diebold-Mariano
-
-[ ] Bootstrap
-[ ] Model Confidence Set
-[ ] Walk-forward splitter
-[ ] Walk-forward fold
-[ ] Walk-forward runner
-[ ] Filtered Historical Simulation
-[ ] VaR
-[ ] Expected Shortfall
-[ ] Kupiec test
-[ ] Christoffersen test
-[ ] Portfolio engine
-[ ] Transaction costs
-[ ] Stress testing
-[ ] Cross-asset analysis
-[ ] Failure analysis
-[ ] Research verdict
-[ ] API integration
-[ ] Frontend dashboard
+```bash
+source .venv/bin/activate
 ```
 
----
+Install the dependencies listed in the repository:
 
-## Research Integrity
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-This project separates:
+Run the project's configured entry point using the instructions and arguments supported by the current implementation.
 
-1. **Implementation verification**
-2. **Out-of-sample empirical results**
-3. **Statistical significance**
-4. **Economic significance**
-5. **Failure analysis**
+The exact execution command depends on the repository's current runner, configuration, and data requirements. Do not assume that installing the dependencies alone makes every model or data pipeline ready to execute.
 
-Smoke-test outputs are not presented as evidence of model superiority.
+## Research Interpretation
 
-The final research conclusion will be based on the locked walk-forward methodology, statistical tests, risk backtesting, portfolio evaluation, stress testing, and cross-asset validation.
+The project is designed to evaluate several connected questions:
 
----
+- How do EWMA, GJR-GARCH, and XGBoost compare when forecasting volatility?
+- Does regime information improve forecasts beyond the selected baselines?
+- Do forecast differences translate into meaningful changes in VaR and Expected Shortfall?
+- Do risk-targeted portfolio decisions remain useful after transaction costs?
+- How stable are the findings across assets, time periods, and market regimes?
 
-## License
+These are evaluation questions, not predetermined conclusions. The answers must come from reproducible experiments and documented results.
 
-This project is licensed under the terms specified in `LICENSE`.
-"""
+## Limitations
 
-path = Path("/mnt/data/README.md")
-path.write_text(readme, encoding="utf-8")
-print(path)
+- Historical financial relationships can change over time.
+- Volatility estimates and regime classifications are uncertain.
+- VaR and Expected Shortfall depend on the quality of the underlying forecasts and estimation assumptions.
+- Backtesting results can be inconclusive when the evaluation sample contains few tail events.
+- Portfolio performance depends on transaction costs, constraints, data quality, and execution assumptions.
+- Performance on selected historical assets does not establish universal generalization.
+
+No model accuracy, risk reduction, or investment return is claimed without supporting empirical results.
+
+## Author
+
+**Revanth Kumar**
+
+GitHub: [@Revanth6699](https://github.com/Revanth6699)
+
+## Disclaimer
+
+AVF-TRPDE is a quantitative research and software engineering project for educational and analytical purposes. It is not financial advice, and its outputs should not be treated as guarantees of future market behavior or portfolio performance.
