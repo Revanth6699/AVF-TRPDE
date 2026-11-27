@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
+from fastapi import HTTPException
 
 import backend.app.api.v1.risk as risk_api
 from backend.app.schemas.risk import RiskRequest
@@ -128,9 +130,7 @@ def test_risk_api_rejects_legacy_forecast_artifacts_without_next_day_returns(mon
         lambda experiment_name: artifact.copy(),
     )
 
-    try:
+    with pytest.raises(HTTPException) as error:
         risk_api.create_risk_analysis(_request("A0"))
-    except Exception as exc:
-        assert "risk-alignment columns" in str(exc)
-    else:
-        raise AssertionError("Legacy forecast artifacts must not be accepted for FHS.")
+    assert error.value.status_code == 422
+    assert "risk-alignment columns" in error.value.detail
