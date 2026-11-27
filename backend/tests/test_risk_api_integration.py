@@ -112,6 +112,7 @@ def test_risk_api_generates_backtests_and_common_sample_comparison(monkeypatch) 
     comparison = risk_api.compare_risk(_request(None))
     assert comparison.observation_count == 10
     assert comparison.asset_count == 2
+    assert comparison.aggregation == "mean_over_common_asset_date_observations"
     assert {item.model for item in comparison.models} == {"A0", "A1"}
     assert all(np.isfinite(item.var_95) for item in comparison.models)
     assert all(np.isfinite(item.var_99) for item in comparison.models)
