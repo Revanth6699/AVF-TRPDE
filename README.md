@@ -146,7 +146,7 @@ The exact package versions and installation requirements are maintained in the r
 
 ## Project Status
 
-**Backend status: research prototype; end-to-end validation is not complete.** Model and calculation modules exist for volatility forecasting, HMM regimes, evaluation, tail risk, portfolio analysis, and stress testing. However, the complete API workflow is not connected: forecast evaluation/comparison, risk backtesting/comparison, portfolio comparison, and report execution still contain unimplemented endpoints. The stress modules are not exposed as a complete API workflow. Do not treat the presence of these modules as proof that the corresponding end-to-end feature is operational.
+**Backend status: research prototype; end-to-end validation is not complete.** The experiment API connects registered datasets to chronological walk-forward model execution and forecast evaluation. It supports per-asset MAE, RMSE, variance-based QLIKE, pairwise Diebold–Mariano comparisons, moving-block bootstrap confidence intervals, and Model Confidence Set analysis on common out-of-sample timestamps. The experiment executor also supports the locked A0–A3 ablations through the `parameters.ablations` setting. Separate risk backtesting/comparison, portfolio comparison, report-generation, and complete stress API workflows remain incomplete. Do not treat module presence or a synthetic CI test as proof of full production readiness.
 
 The research data resolver now distinguishes daily OHLCV from intraday OHLCV. Daily bars provide end-of-day features; intraday bars provide realized variance. A daily dataset must be paired with an overlapping intraday dataset to create next-trading-day realized-volatility labels. Intraday input is aggregated to one OHLCV row per asset and trading day before walk-forward evaluation. Provider history, overlap, data quality, and runtime behavior still require environment-specific verification.
 
@@ -204,6 +204,43 @@ The live Twelve Data smoke tests in `backend/tests/test_data_download.py` requir
 
 The exact execution command depends on the repository's current runner, configuration, and data requirements. Do not assume that installing the dependencies alone makes every model or data pipeline ready to execute.
 
+## Running an A0–A3 Ablation Experiment
+
+Register an experiment with a registered dataset name and include the ablation list in its parameters. The `models` field remains required by the experiment schema; use `XGBoost` as the base learner for the locked ablation set.
+
+Create the experiment with `POST /experiments`:
+
+```json
+{
+  "name": "volatility-ablation",
+  "description": "Walk-forward A0-A3 ablation comparison",
+  "models": ["XGBoost"],
+  "metrics": ["MAE", "RMSE", "QLIKE"],
+  "risk_measures": [],
+  "parameters": {
+    "dataset_name": "YOUR_REGISTERED_DATASET",
+    "ablations": ["A0", "A1", "A2", "A3"],
+    "train_size": 120,
+    "test_size": 1,
+    "step_size": 1,
+    "bootstrap_samples": 1000,
+    "confidence_level": 0.95
+  },
+  "metadata": {}
+}
+```
+
+Then execute it with `POST /experiments/run`:
+
+```json
+{
+  "experiment_names": ["volatility-ablation"]
+}
+```
+
+The response contains executed ablations, fold and prediction counts, per-asset forecast metrics, pairwise DM results, confidence intervals, and MCS output when enough common out-of-sample observations are available. The MCS calculation is not run when fewer than 10 common observations are available; the response reports that limitation rather than inventing a result. QLIKE is calculated on variance: the API receives volatility standard deviations and squares their ratio when computing the loss.
+
+This workflow does not execute VaR/ES backtesting or portfolio analysis. Those remain separate backend work.
 ## Research Interpretation
 
 The project is designed to evaluate several connected questions:
