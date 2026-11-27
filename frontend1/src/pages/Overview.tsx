@@ -1,6 +1,6 @@
 import {
-  ArrowRight, Activity, BarChart3, Database, FileText, FlaskConical,
-  LineChart, ShieldCheck, WalletCards, Waves, Workflow,
+  ArrowRight, Activity, Database, FileText, FlaskConical,
+  LineChart, ShieldCheck, WalletCards, Workflow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
