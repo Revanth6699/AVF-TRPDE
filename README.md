@@ -377,3 +377,5 @@ npm run build
 ```
 
 The frontend does not generate synthetic research results. It displays outputs returned by the backend APIs. Dataset registration currently stores dataset metadata; it is not a file-upload or market-data ingestion endpoint.
+
+For a deployed frontend, set CORS_ORIGINS in the backend environment to the exact frontend origin (for example, your Vercel production URL). Keep the localhost origins for local development; do not use a wildcard when credentials are enabled.
