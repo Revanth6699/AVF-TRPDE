@@ -165,8 +165,8 @@ def _build_sections(request: ReportRequest, start: pd.Timestamp, end: pd.Timesta
             metrics = record.get("performance", {})
             selected_return = float((1.0 + frame["net_return"].astype(float)).prod() - 1.0)
             lines.append(
-                f"- {record['strategy']}: {len(frame)} observations; "
-                f"stored full-run net return={metrics.get('net_pnl')}; "
+                f"- {record['strategy']} ({frame['forecast_model'].iloc[0] if 'forecast_model' in frame else 'model provenance unavailable'}): "
+                f"{len(frame)} observations; stored full-run net return={metrics.get('net_pnl')}; "
                 f"stored full-run max drawdown={metrics.get('max_drawdown')}; "
                 f"selected-period net return={selected_return:.8g}"
             )
