@@ -6,6 +6,7 @@ import Experiments from "./pages/Experiments";
 import Forecasts from "./pages/Forecasts";
 import Risk from "./pages/Risk";
 import Portfolios from "./pages/Portfolios";
+import Stress from "./pages/Stress";
 import Reports from "./pages/Reports";
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
           <Route path="/forecasts" element={<Forecasts />} />
           <Route path="/risk" element={<Risk />} />
           <Route path="/portfolios" element={<Portfolios />} />
+          <Route path="/stress" element={<Stress />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
