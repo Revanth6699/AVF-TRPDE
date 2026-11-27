@@ -1,30 +1,40 @@
+from __future__ import annotations
+
 import os
 
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
 
-API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TIME_SERIES_URL = "https://api.twelvedata.com/time_series"
 
-if not API_KEY:
-    raise RuntimeError("TWELVE_DATA_API_KEY is not configured.")
 
-url = "https://api.twelvedata.com/time_series"
+def main() -> None:
+    """Run an optional live Twelve Data API smoke check."""
+    load_dotenv()
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        raise SystemExit(
+            "TWELVE_DATA_API_KEY is not configured. Add it to the local .env "
+            "before running this optional integration script."
+        )
 
-params = {
-    "symbol": "AAPL",
-    "interval": "1day",
-    "outputsize": 5,
-    "apikey": API_KEY,
-}
+    response = requests.get(
+        TIME_SERIES_URL,
+        params={
+            "symbol": "AAPL",
+            "interval": "1day",
+            "outputsize": 5,
+            "apikey": api_key,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("status") != "ok":
+        raise RuntimeError(payload)
+    print(payload)
 
-response = requests.get(url, params=params, timeout=30)
-response.raise_for_status()
 
-data = response.json()
-
-if data.get("status") != "ok":
-    raise RuntimeError(data)
-
-print(data)
+if __name__ == "__main__":
+    main()
