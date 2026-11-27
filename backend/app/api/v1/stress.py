@@ -66,8 +66,14 @@ def run_stress(request: StressRunRequest) -> StressRunResponse:
         )
     window = int(config.get("volatility_window", 20))
     series = series.sort_values("timestamp").reset_index(drop=True)
-    series["volatility"] = series["return"].rolling(window, min_periods=2).std().bfill()
-    if series["volatility"].isna().any() or not np.isfinite(series["volatility"]).all():
+    series["volatility"] = series["return"].rolling(window, min_periods=2).std()
+    series = series.dropna(subset=["volatility"]).reset_index(drop=True)
+    if len(series) < minimum:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Stress analysis requires at least {minimum} observations with a valid trailing volatility estimate; found {len(series)}.",
+        )
+    if not np.isfinite(series["volatility"].to_numpy(dtype=float)).all():
         raise HTTPException(status_code=422, detail="Could not derive finite historical portfolio volatility.")
     stress_frame = series.assign(asset_id="PORTFOLIO")[
         ["timestamp", "asset_id", "return", "volatility"]
