@@ -1,104 +1,64 @@
-import {
-  Bell,
-  ChevronDown,
-  Command,
-  Moon,
-  Search,
-  SlidersHorizontal,
-  Sun,
-} from "lucide-react";
+import { Moon, Sun, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { getHealth } from "../../api/system";
 
 type Theme = "light" | "dark";
+const PAGE_NAMES: Record<string, string> = {
+  "/": "Overview",
+  "/datasets": "Datasets",
+  "/experiments": "Experiments",
+  "/forecasts": "Forecasts",
+  "/risk": "Risk engine",
+  "/portfolios": "Portfolios",
+  "/stress": "Stress testing",
+  "/reports": "Reports",
+};
 
 function getInitialTheme(): Theme {
-  const saved = localStorage.getItem("avf-theme");
-
-  if (saved === "dark" || saved === "light") {
-    return saved;
+  try {
+    const saved = localStorage.getItem("avf-theme");
+    return saved === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
   }
-
-  return "light";
 }
 
 export default function Topbar() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [apiState, setApiState] = useState<"checking" | "online" | "offline">("checking");
+  const location = useLocation();
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("avf-theme", theme);
+    try { localStorage.setItem("avf-theme", theme); } catch { /* storage may be unavailable */ }
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme((current) => (current === "light" ? "dark" : "light"));
-  };
+  useEffect(() => {
+    let active = true;
+    getHealth()
+      .then((health) => { if (active) setApiState(health.status === "ok" ? "online" : "offline"); })
+      .catch(() => { if (active) setApiState("offline"); });
+    return () => { active = false; };
+  }, [location.pathname]);
 
   return (
     <header className="topbar">
-      <div className="topbar-search">
-        <Search size={17} strokeWidth={1.8} />
-
-        <input
-          type="text"
-          placeholder="Search datasets, experiments, models..."
-          aria-label="Search research workspace"
-        />
-
-        <div className="search-shortcut">
-          <Command size={12} />
-          <span>K</span>
-        </div>
+      <div className="topbar-location">
+        <span className="topbar-location-root">AVF-TRPDE</span>
+        <span className="topbar-location-divider">/</span>
+        <strong>{PAGE_NAMES[location.pathname] ?? "Workspace"}</strong>
       </div>
-
       <div className="topbar-actions">
-        <div className="workspace-status">
-          <span className="workspace-status-dot" />
-          <span>Research</span>
+        <div className={`api-connection api-connection-${apiState}`} role="status" aria-live="polite">
+          {apiState === "offline" ? <WifiOff size={14} /> : <Wifi size={14} />}
+          <span>{apiState === "checking" ? "Checking API" : apiState === "online" ? "API connected" : "API unavailable"}</span>
         </div>
-
-        <button
-          className="topbar-icon-button"
-          type="button"
-          aria-label={`Switch to ${
-            theme === "light" ? "dark" : "light"
-          } theme`}
-          onClick={toggleTheme}
-        >
-          {theme === "light" ? (
-            <Moon size={17} strokeWidth={1.8} />
-          ) : (
-            <Sun size={17} strokeWidth={1.8} />
-          )}
-        </button>
-
-        <button
-          className="topbar-icon-button notification-button"
-          type="button"
-          aria-label="Notifications"
-        >
-          <Bell size={17} strokeWidth={1.8} />
-          <span className="notification-dot" />
-        </button>
-
-        <button
-          className="topbar-icon-button"
-          type="button"
-          aria-label="Workspace settings"
-        >
-          <SlidersHorizontal size={17} strokeWidth={1.8} />
-        </button>
-
-        <div className="topbar-divider" />
-
-        <button className="researcher-profile" type="button">
-          <span className="profile-avatar">AV</span>
-
-          <span className="profile-copy">
-            <span className="profile-name">Researcher</span>
-            <span className="profile-role">AVF-TRPDE</span>
-          </span>
-
-          <ChevronDown size={15} strokeWidth={1.8} />
+        <span className="topbar-divider" />
+        <button className="topbar-icon-button" type="button"
+          aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+          onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}>
+          {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
         </button>
       </div>
     </header>
