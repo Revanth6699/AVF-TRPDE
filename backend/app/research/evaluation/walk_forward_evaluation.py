@@ -184,7 +184,9 @@ def evaluate_walk_forward_predictions(
                             "loss": "QLIKE",
                         }
                     asset_result["pairwise_diebold_mariano"][model] = dm
-                    ratio = reference_actual / forecast
+                    # QLIKE is defined on variance. Predictions and targets
+                    # are volatility (standard deviation), so square their ratio.
+                    ratio = np.square(reference_actual / forecast)
                     loss_matrix.append(ratio - np.log(ratio) - 1.0)
 
                 if len(aligned) >= 10:
@@ -245,7 +247,7 @@ def _moving_block_metric_interval(
             return float(np.mean(np.abs(y - yhat)))
         if metric == "rmse":
             return float(np.sqrt(np.mean(np.square(y - yhat))))
-        ratio = y / yhat
+        ratio = np.square(y / yhat)
         return float(np.mean(ratio - np.log(ratio) - 1.0))
 
     for index in range(samples):
