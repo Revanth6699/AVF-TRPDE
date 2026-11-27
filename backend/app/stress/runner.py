@@ -66,13 +66,10 @@ def run_stress_scenario(
 
     returns = df["return"].to_numpy(dtype=float)
 
-    total_return = float(
-        returns.sum()
-    )
-
     cumulative_return = float(
         np.prod(1.0 + returns) - 1.0
     )
+    total_return = cumulative_return
 
     mean_return = float(
         np.mean(returns)
@@ -269,17 +266,11 @@ def _maximum_drawdown(
     if len(returns) == 0:
         return 0.0
 
-    wealth = np.cumprod(
-        1.0 + returns
-    )
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + returns)))
 
-    running_peak = np.maximum.accumulate(
-        wealth
-    )
+    running_peak = np.maximum.accumulate(wealth)
 
-    drawdowns = (
-        wealth / running_peak
-    ) - 1.0
+    drawdowns = (wealth / running_peak) - 1.0
 
     return float(
         np.min(drawdowns)
