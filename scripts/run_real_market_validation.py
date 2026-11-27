@@ -105,9 +105,9 @@ def main():
     params = {
         "dataset_name": dataset_name, "path": str(daily_path), "intraday_path": str(hourly_path),
         "intraday_start_timestamp": intraday_start, "intraday_end_timestamp": intraday_end,
-        "train_size": 504, "test_size": 20, "step_size": 20, "expanding": True,
+        "train_size": 2550, "test_size": 1, "step_size": 1, "expanding": True,
         "ewma_decay": 0.94, "hmm_n_components": 3, "hmm_n_iter": 150, "hmm_random_state": 42,
-        "xgb_n_estimators": 40, "xgb_max_depth": 3, "xgb_learning_rate": 0.05,
+        "xgb_n_estimators": 25, "xgb_max_depth": 3, "xgb_learning_rate": 0.05,
         "xgb_subsample": 0.8, "xgb_colsample_bytree": 0.8,
         "bootstrap_samples": 200, "bootstrap_random_state": 42, "confidence_level": 0.95
     }
