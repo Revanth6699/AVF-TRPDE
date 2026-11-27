@@ -15,7 +15,11 @@ def _research_fixture() -> pd.DataFrame:
     # than independent noise that can create pathological HMM covariance.
     from test_walk_forward_controlled import make_controlled_data
 
-    return make_controlled_data().iloc[:125].copy().reset_index(drop=True)
+    frame = make_controlled_data().copy()
+    frame["target_timestamp"] = frame.groupby("asset_id", sort=False)["timestamp"].shift(-1)
+    frame["target_return"] = frame.groupby("asset_id", sort=False)["return"].shift(-1)
+    frame = frame.dropna(subset=["target_timestamp", "target_return"])
+    return frame.iloc[:125].copy().reset_index(drop=True)
 
 
 def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None:
