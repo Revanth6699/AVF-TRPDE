@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from backend.app.research.evaluation.model_confidence_set import (
+from backend.app.research.evaluation.mcs import (
     build_loss_matrix,
     model_confidence_set,
 )

@@ -5,6 +5,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from scipy.stats import t as student_t
 
 from backend.app.research.evaluation.forecast_metrics import (
     ForecastMetricError,
@@ -32,6 +33,7 @@ class DieboldMarianoResult:
     observations: int
     loss_function: str
     alternative: str
+    horizon: int
 
 
 def diebold_mariano_test(
@@ -46,6 +48,7 @@ def diebold_mariano_test(
         "greater",
     ] = "two_sided",
     lag: int | None = None,
+    horizon: int = 1,
 ) -> DieboldMarianoResult:
     """
     Perform a Diebold-Mariano test comparing two forecasts.
@@ -127,6 +130,9 @@ def diebold_mariano_test(
             "or 'greater'."
         )
 
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon < 1:
+        raise DieboldMarianoError("horizon must be a positive integer.")
+
     effective_lag = _resolve_lag(
         len(y_true),
         lag,
@@ -176,6 +182,7 @@ def diebold_mariano_test(
                 observations=len(y_true),
                 loss_function=loss,
                 alternative=alternative,
+                horizon=horizon,
             )
 
         raise DieboldMarianoError(
@@ -187,12 +194,19 @@ def diebold_mariano_test(
         variance / len(loss_difference)
     )
 
-    statistic = mean_difference / standard_error
-
-    p_value = _normal_p_value(
-        statistic,
-        alternative,
+    raw_statistic = mean_difference / standard_error
+    observations = len(loss_difference)
+    # Harvey-Leybourne-Newbold finite-sample correction for h-step forecasts.
+    correction = np.sqrt(
+        (observations + 1 - 2 * horizon + horizon * (horizon - 1) / observations)
+        / observations
     )
+    if not np.isfinite(correction) or correction <= 0:
+        raise DieboldMarianoError(
+            "The sample is too short for the requested forecast horizon."
+        )
+    statistic = float(raw_statistic * correction)
+    p_value = _student_t_p_value(statistic, observations - 1, alternative)
 
     return DieboldMarianoResult(
         statistic=float(statistic),
@@ -201,6 +215,7 @@ def diebold_mariano_test(
         observations=len(y_true),
         loss_function=loss,
         alternative=alternative,
+        horizon=horizon,
     )
 
 
@@ -398,6 +413,18 @@ def _resolve_lag(
 
     return lag
 
+
+def _student_t_p_value(statistic: float, degrees_of_freedom: int, alternative: str) -> float:
+    """Calculate an HLN-adjusted Student-t p-value."""
+    if alternative == "two_sided":
+        value = 2.0 * student_t.sf(abs(statistic), df=degrees_of_freedom)
+    elif alternative == "less":
+        value = student_t.cdf(statistic, df=degrees_of_freedom)
+    elif alternative == "greater":
+        value = student_t.sf(statistic, df=degrees_of_freedom)
+    else:
+        raise DieboldMarianoError(f"Unsupported alternative: {alternative}")
+    return float(np.clip(value, 0.0, 1.0))
 
 def _normal_p_value(
     statistic: float,

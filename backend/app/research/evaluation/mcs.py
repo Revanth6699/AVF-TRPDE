@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+import pandas as pd
 
 
 class MCSError(ValueError):
@@ -31,6 +32,7 @@ class MCSResult:
     bootstrap_samples: int
     block_length: int
     elimination_history: tuple[MCSElimination, ...]
+    observations: int
 
     @property
     def confidence_level(self) -> float:
@@ -43,6 +45,21 @@ class MCSResult:
     @property
     def is_singleton(self) -> bool:
         return self.model_count == 1
+
+    @property
+    def statistic(self) -> float:
+        return self.test_statistic
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "included_models": self.included_models,
+            "eliminated_models": self.eliminated_models,
+            "confidence_level": self.confidence_level,
+            "observations": self.observations,
+            "bootstrap_samples": self.bootstrap_samples,
+            "statistic": self.test_statistic,
+            "p_value": self.p_value,
+        }
 
 
 def model_confidence_set(
@@ -177,6 +194,7 @@ def model_confidence_set(
         bootstrap_samples=int(n_bootstrap),
         block_length=int(block_length),
         elimination_history=tuple(history),
+        observations=int(n_observations),
     )
 
 
@@ -401,6 +419,43 @@ def _block_robust_scale(values: np.ndarray) -> float:
     return float(np.sqrt(long_run_variance / n))
 
 
+
+def build_loss_matrix(
+    actual: np.ndarray | list[float],
+    forecasts: dict[str, np.ndarray | list[float]],
+    *,
+    loss: str = "qlike",
+) -> pd.DataFrame:
+    """Build a common pointwise loss matrix for the canonical MCS."""
+    actual_values = np.asarray(actual, dtype=float)
+    if actual_values.ndim != 1 or not np.isfinite(actual_values).all():
+        raise MCSError("actual must be a finite one-dimensional array.")
+    if len(forecasts) < 2:
+        raise MCSError("At least two model forecasts are required.")
+    loss_name = loss.strip().lower()
+    if loss_name not in {"mae", "rmse", "qlike"}:
+        raise MCSError("loss must be 'mae', 'rmse', or 'qlike'.")
+    columns: dict[str, np.ndarray] = {}
+    for name, forecast in forecasts.items():
+        if not isinstance(name, str) or not name.strip():
+            raise MCSError("Model names must be non-empty strings.")
+        values = np.asarray(forecast, dtype=float)
+        if values.ndim != 1 or len(values) != len(actual_values) or not np.isfinite(values).all():
+            raise MCSError("Every forecast must be finite, one-dimensional, and aligned with actual.")
+        errors = actual_values - values
+        if loss_name == "mae":
+            pointwise = np.abs(errors)
+        elif loss_name == "rmse":
+            pointwise = np.square(errors)
+        else:
+            if (actual_values <= 0).any() or (values <= 0).any():
+                raise MCSError("QLIKE requires positive actual and forecast values.")
+            ratio = np.square(actual_values / values)
+            pointwise = ratio - np.log(ratio) - 1.0
+        columns[name] = pointwise
+    return pd.DataFrame(columns, index=np.arange(len(actual_values)))
+
+
 def mcs(
     losses: np.ndarray,
     models: Sequence[str] | None = None,
@@ -427,4 +482,5 @@ __all__ = [
     "MCSResult",
     "mcs",
     "model_confidence_set",
+    "build_loss_matrix",
 ]
