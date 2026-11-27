@@ -85,6 +85,10 @@ def calculate_net_return(
     net_return = float(
         gross_return - transaction_cost
     )
+    if net_return <= -1.0:
+        raise TransactionCostError(
+            "Transaction cost must not reduce net return to -100% or below."
+        )
 
     return NetReturnResult(
         gross_return=float(gross_return),
@@ -281,6 +285,15 @@ def calculate_cost_sensitivity(
         dtype=float
     )
 
+    if not np.isfinite(turnover_values).all():
+        raise TransactionCostError(
+            "turnover must contain only finite values."
+        )
+    if not np.isfinite(gross_return_values).all():
+        raise TransactionCostError(
+            "gross_return must contain only finite values."
+        )
+
     if (turnover_values < 0).any():
         raise TransactionCostError(
             "turnover must not contain negative values."
@@ -419,6 +432,10 @@ def _validate_return(
     if not np.isfinite(value):
         raise TransactionCostError(
             "gross_return must be finite."
+        )
+    if value <= -1.0:
+        raise TransactionCostError(
+            "gross_return must be greater than -100%."
         )
 
 
