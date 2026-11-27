@@ -1,0 +1,19 @@
+annualization_periods: 252
+volatility_window: 20
+minimum_observations: 20
+
+scenarios:
+  normal_volatility:
+    lower_percentile: 0.0
+    upper_percentile: 50.0
+  high_volatility:
+    percentile: 90.0
+  volatility_spike:
+    percentile: 99.0
+  prolonged_drawdown:
+    minimum_drawdown: -0.10
+    minimum_duration: 5
+
+# No fixed historical date windows are asserted by default.
+# Add windows only when the study protocol specifies dates in advance.
+historical_windows: []

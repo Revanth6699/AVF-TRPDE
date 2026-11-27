@@ -146,7 +146,7 @@ The exact package versions and installation requirements are maintained in the r
 
 ## Project Status
 
-**Backend status: research prototype; end-to-end validation is not complete.** The experiment API connects registered datasets to chronological walk-forward model execution and forecast evaluation. It supports per-asset MAE, RMSE, variance-based QLIKE, pairwise Diebold–Mariano comparisons, moving-block bootstrap confidence intervals, and Model Confidence Set analysis on common out-of-sample timestamps. The experiment executor also supports the locked A0–A3 ablations through the `parameters.ablations` setting. The /risk API now generates FHS VaR95/VaR99/ES95 forecasts and exposes Kupiec/Christoffersen VaR backtests; the /forecasts API persists and evaluates model predictions. Portfolio calculation primitives have regression tests for compounding, Sharpe/Sortino, drawdown, buy-and-hold drift, turnover, and transaction costs, but the end-to-end portfolio API, report generation, and complete stress API workflows remain incomplete. Do not treat module presence or synthetic CI tests as proof of full production readiness.
+**Backend status: research prototype; end-to-end validation is not complete.** The experiment API connects registered datasets to chronological walk-forward model execution and forecast evaluation. It supports per-asset MAE, RMSE, variance-based QLIKE, pairwise Diebold–Mariano comparisons, moving-block bootstrap confidence intervals, and Model Confidence Set analysis on common out-of-sample timestamps. The experiment executor also supports the locked A0–A3 ablations through the `parameters.ablations` setting. The /risk API generates FHS VaR95/VaR99/ES95 forecasts and exposes Kupiec/Christoffersen VaR backtests; the /forecasts API persists and evaluates model predictions. The /portfolios API now executes static, buy-and-hold, and covariance-based risk-targeted portfolios from persisted out-of-sample forecast records, applies position/turnover limits and transaction costs, persists return series and performance metrics, and compares strategies on common dates. The /stress API builds configured retrospective scenarios from persisted portfolio net returns and stores scenario results. The /reports API generates and persists evidence-based Markdown and JSON research reports from available experiment, forecast, risk, portfolio, and stress outputs. These integrations have automated synthetic regression coverage; they do not establish real-market validity or production readiness.
 
 The research data resolver now distinguishes daily OHLCV from intraday OHLCV. Daily bars provide end-of-day features; intraday bars provide realized variance. A daily dataset must be paired with an overlapping intraday dataset to create next-trading-day realized-volatility labels. Intraday input is aggregated to one OHLCV row per asset and trading day before walk-forward evaluation. Provider history, overlap, data quality, and runtime behavior still require environment-specific verification.
 
@@ -274,6 +274,46 @@ Run VaR backtesting with `POST /risk/backtest` using the same request. The respo
 Compare at least two completed model risk results with `POST /risk/compare`. The request uses the same experiment, dataset, assets, confidence levels, and date range; omit `model` to compare all stored models. The reported VaR/ES values are means over the common asset/date observations, not the latest point or a portfolio-level risk estimate.
 
 Risk results are generated from the persisted experiment Parquet artifact. The full eight-year daily / three-year intraday market dataset has not yet been validated, so synthetic CI results are integration evidence only, not empirical risk findings.
+
+## Portfolio Execution API
+
+Persist forecasts first with POST /forecasts. Then call POST /portfolios with the forecast model, assets, target-date range, and constraints. Supported strategies are:
+- static: equal-weight constant-mix weights, rebalanced subject to the turnover limit;
+- buy_and_hold: equal-weight initial holdings with return-driven weight drift; if the position cap is breached, execution fails rather than silently rebalancing;
+- risk_targeted: equal-weight base exposures scaled to the requested daily volatility target using model forecast volatilities and a historical correlation matrix estimated only from strictly prior out-of-sample returns. The first 20 dates are held in cash until enough prior observations exist.
+
+The API applies a per-position cap, gross L1 turnover limit, and transaction cost per unit of gross turnover. Results include gross/net returns, turnover, costs, exposures, predicted portfolio volatility (risk-targeted only), compounded performance, Sharpe, Sortino, drawdown, Calmar, empirical VaR95/VaR99/ES95, and gross/net P&L. POST /portfolios/compare compares stored strategies over their common evaluation dates. These are historical backtest outputs, not live execution or investment recommendations.
+
+Example request:
+
+```json
+{
+  "experiment_name": "volatility-ablation",
+  "dataset_name": "YOUR_REGISTERED_DATASET",
+  "strategy": "risk_targeted",
+  "model": "XGBoost",
+  "assets": ["AAPL", "MSFT"],
+  "start_timestamp": "2024-01-01T00:00:00",
+  "end_timestamp": "2026-01-01T00:00:00",
+  "volatility_target": 0.01,
+  "max_position": 0.8,
+  "max_turnover": 0.2,
+  "transaction_cost": 0.0004,
+  "covariance_window": 60
+}
+```
+
+The volatility target is a daily standard-deviation target. The model must already have persisted forecast records for the requested experiment and dataset. Risk-targeted execution needs at least 20 prior complete out-of-sample return observations before it begins taking positions.
+
+## Stress Testing API
+
+Run POST /stress/run with an experiment name and a completed portfolio strategy. The service loads thresholds from configs/stress.yaml, evaluates normal-volatility, high-volatility, volatility-spike, and prolonged-drawdown subsets, and persists scenario metrics in DuckDB. GET /stress/{experiment_name} retrieves stored results; add the strategy query parameter when selecting one strategy.
+
+Stress scenarios are retrospective descriptive selections from the observed portfolio return history. Percentile thresholds are calculated from the supplied sample. No historical date windows are assumed by default; any fixed windows must be added to the configuration before the evaluation protocol is run. Stress outputs are not forward predictions.
+
+## Research Report Generation API
+
+POST /reports/run generates Markdown and JSON artifacts under reports/{experiment_name}/ and persists the report sections in DuckDB. The report includes only outputs that actually exist for the selected experiment, dataset, and period. Missing forecasts, risk results, portfolio results, or stress results are reported as unavailable; the generator does not fill gaps with synthetic numbers. GET /reports/{experiment_name}?report_type=... retrieves the persisted report. POST /reports can register a report request before execution.
 
 ## Research Interpretation
 

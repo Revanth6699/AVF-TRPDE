@@ -66,13 +66,10 @@ def run_stress_scenario(
 
     returns = df["return"].to_numpy(dtype=float)
 
-    total_return = float(
-        returns.sum()
-    )
-
     cumulative_return = float(
         np.prod(1.0 + returns) - 1.0
     )
+    total_return = cumulative_return
 
     mean_return = float(
         np.mean(returns)
@@ -269,17 +266,11 @@ def _maximum_drawdown(
     if len(returns) == 0:
         return 0.0
 
-    wealth = np.cumprod(
-        1.0 + returns
-    )
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + returns)))
 
-    running_peak = np.maximum.accumulate(
-        wealth
-    )
+    running_peak = np.maximum.accumulate(wealth)
 
-    drawdowns = (
-        wealth / running_peak
-    ) - 1.0
+    drawdowns = (wealth / running_peak) - 1.0
 
     return float(
         np.min(drawdowns)
@@ -362,6 +353,18 @@ def _validate_input(
         raise StressRunnerError(
             "asset_id contains missing values."
         )
+    normalized_assets = dataframe["asset_id"].astype("string").str.strip().str.upper()
+    if normalized_assets.eq("").any():
+        raise StressRunnerError("asset_id contains empty values.")
+    if normalized_assets.nunique() != 1:
+        raise StressRunnerError(
+            "run_stress_scenario expects one portfolio/asset return series. "
+            "Aggregate assets to portfolio returns before calling it."
+        )
+    if pd.to_datetime(dataframe["timestamp"], errors="coerce").duplicated().any():
+        raise StressRunnerError(
+            "A single stress return series must contain unique timestamps."
+        )
 
     returns = pd.to_numeric(
         dataframe["return"],
@@ -378,6 +381,10 @@ def _validate_input(
     ).all():
         raise StressRunnerError(
             "return contains non-finite values."
+        )
+    if (returns <= -1.0).any():
+        raise StressRunnerError(
+            "Simple returns must be greater than -100%."
         )
 
 

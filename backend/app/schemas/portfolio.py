@@ -13,6 +13,7 @@ class PortfolioRequest(BaseModel):
     experiment_name: str = Field(min_length=1)
     dataset_name: str = Field(min_length=1)
     strategy: str = Field(min_length=1)
+    model: str = Field(min_length=1)
     assets: list[str] = Field(min_length=1)
 
     start_timestamp: datetime
@@ -22,6 +23,7 @@ class PortfolioRequest(BaseModel):
     max_position: float = Field(gt=0.0)
     max_turnover: float = Field(gt=0.0)
     transaction_cost: float = Field(ge=0.0)
+    covariance_window: int = Field(default=60, ge=20, le=1000)
 
 
 class PortfolioPosition(BaseModel):
@@ -42,8 +44,11 @@ class PortfolioResponse(BaseModel):
     experiment_name: str
     dataset_name: str
     strategy: str
+    model: str | None = None
 
     positions: list[PortfolioPosition]
+    return_series: list[dict] = Field(default_factory=list)
+    performance: dict[str, float | None] = Field(default_factory=dict)
 
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
@@ -80,6 +85,7 @@ class PortfolioComparisonItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy: str = Field(min_length=1)
+    model: str = Field(min_length=1)
 
     total_return: float
     volatility: float = Field(ge=0.0)
