@@ -353,6 +353,18 @@ def _validate_input(
         raise StressRunnerError(
             "asset_id contains missing values."
         )
+    normalized_assets = dataframe["asset_id"].astype("string").str.strip().str.upper()
+    if normalized_assets.eq("").any():
+        raise StressRunnerError("asset_id contains empty values.")
+    if normalized_assets.nunique() != 1:
+        raise StressRunnerError(
+            "run_stress_scenario expects one portfolio/asset return series. "
+            "Aggregate assets to portfolio returns before calling it."
+        )
+    if pd.to_datetime(dataframe["timestamp"], errors="coerce").duplicated().any():
+        raise StressRunnerError(
+            "A single stress return series must contain unique timestamps."
+        )
 
     returns = pd.to_numeric(
         dataframe["return"],
@@ -369,6 +381,10 @@ def _validate_input(
     ).all():
         raise StressRunnerError(
             "return contains non-finite values."
+        )
+    if (returns <= -1.0).any():
+        raise StressRunnerError(
+            "Simple returns must be greater than -100%."
         )
 
 
