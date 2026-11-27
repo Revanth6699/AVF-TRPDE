@@ -48,6 +48,43 @@ def test_performance_rejects_single_observation() -> None:
         calculate_performance(pd.Series([0.01]))
 
 
+def test_portfolio_returns_apply_pre_return_weights_to_simple_returns() -> None:
+    returns = pd.DataFrame(
+        {
+            "timestamp": [
+                "2024-01-01",
+                "2024-01-01",
+                "2024-01-02",
+                "2024-01-02",
+            ],
+            "asset_id": ["AAA", "BBB", "AAA", "BBB"],
+            "return": [0.01, 0.02, -0.01, 0.03],
+        }
+    )
+    weights = pd.DataFrame(
+        {
+            "timestamp": [
+                "2024-01-01",
+                "2024-01-01",
+                "2024-01-02",
+                "2024-01-02",
+            ],
+            "asset_id": ["AAA", "BBB", "AAA", "BBB"],
+            "weight": [0.6, 0.4, 0.6, 0.4],
+        }
+    )
+
+    result = calculate_portfolio_returns(returns, weights)
+    np.testing.assert_allclose(
+        result.portfolio_returns["portfolio_return"].to_numpy(),
+        [0.014, 0.006],
+    )
+    np.testing.assert_allclose(
+        result.portfolio_returns["gross_exposure"].to_numpy(),
+        [1.0, 1.0],
+    )
+
+
 def test_portfolio_return_calculation_rejects_partial_asset_panels() -> None:
     returns = pd.DataFrame(
         {
