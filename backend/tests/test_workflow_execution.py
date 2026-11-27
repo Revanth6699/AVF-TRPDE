@@ -112,3 +112,49 @@ def test_stress_runner_compounds_total_return_and_includes_initial_capital_drawd
     assert result.total_return == pytest.approx(0.08)
     assert result.cumulative_return == pytest.approx(0.08)
     assert result.max_drawdown == pytest.approx(-0.10)
+
+
+def test_stress_runner_rejects_unaggregated_multi_asset_rows() -> None:
+    frame = pd.DataFrame(
+        {
+            "timestamp": ["2024-01-01", "2024-01-01"],
+            "asset_id": ["AAA", "BBB"],
+            "return": [0.01, -0.02],
+        }
+    )
+    with pytest.raises(ValueError, match="expects one portfolio/asset"):
+        run_stress_scenario(frame, scenario_name="pooled")
+
+
+def test_stress_analysis_accepts_empty_scenario_without_zero_filling() -> None:
+    from backend.app.stress.analysis import analyze_stress_results
+
+    results = pd.DataFrame(
+        [
+            {
+                "scenario": "normal_volatility",
+                "observation_count": 3,
+                "asset_count": 1,
+                "total_return": 0.02,
+                "mean_return": 0.006,
+                "volatility": 0.1,
+                "downside_deviation": 0.02,
+                "max_drawdown": -0.01,
+                "cumulative_return": 0.02,
+            },
+            {
+                "scenario": "prolonged_drawdown",
+                "observation_count": 0,
+                "asset_count": 0,
+                "total_return": np.nan,
+                "mean_return": np.nan,
+                "volatility": np.nan,
+                "downside_deviation": np.nan,
+                "max_drawdown": np.nan,
+                "cumulative_return": np.nan,
+            },
+        ]
+    )
+    analysis = analyze_stress_results(results)
+    assert analysis.scenario_count == 2
+    assert analysis.valid_scenario_count == 1
