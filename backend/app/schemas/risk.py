@@ -12,7 +12,7 @@ class RiskRequest(BaseModel):
 
     experiment_name: str = Field(min_length=1)
     dataset_name: str = Field(min_length=1)
-    model: str = Field(min_length=1)
+    model: str | None = Field(default=None, min_length=1)
     assets: list[str] = Field(min_length=1)
     confidence_levels: list[float] = Field(min_length=1)
     start_timestamp: datetime
