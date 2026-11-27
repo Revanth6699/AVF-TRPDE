@@ -9,31 +9,12 @@ import pandas as pd
 import backend.app.api.v1.experiments as experiment_api
 
 
-def _research_fixture(rows: int = 131) -> pd.DataFrame:
-    rng = np.random.default_rng(2026)
-    returns = rng.normal(0.0002, 0.012, size=rows)
-    close = 100.0 * np.exp(np.cumsum(returns))
-    previous_close = np.concatenate(([close[0]], close[:-1]))
-    realized_volatility = np.maximum(
-        rng.normal(0.014, 0.002, size=rows),
-        0.003,
-    )
-    frame = pd.DataFrame(
-        {
-            "timestamp": pd.date_range("2024-01-02", periods=rows, freq="B"),
-            "asset_id": "TEST_ASSET",
-            "return": returns,
-            "realized_volatility": realized_volatility,
-            "target": np.roll(realized_volatility, -1),
-            "open": previous_close,
-            "high": np.maximum(previous_close, close) * 1.003,
-            "low": np.minimum(previous_close, close) * 0.997,
-            "close": close,
-            "volume": rng.integers(100_000, 500_000, size=rows),
-        }
-    )
-    # The final raw observation has no next-day realized-volatility label.
-    return frame.iloc[:-1].reset_index(drop=True)
+def _research_fixture() -> pd.DataFrame:
+    # Reuse the repository's established controlled market fixture rather
+    # than independent noise that can create pathological HMM covariance.
+    from test_walk_forward_controlled import make_controlled_data
+
+    return make_controlled_data().iloc[:125].copy().reset_index(drop=True)
 
 
 def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None:
@@ -94,7 +75,7 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
     assert result["status"] == "completed"
     assert result["ablations_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["models_executed"] == ["A0", "A1", "A2", "A3"]
-    assert result["prediction_rows"] == 40
+    assert result["prediction_rows"] == 20
     assert set(result["model_results"]) == {"A0", "A1", "A2", "A3"}
     assert set(result["evaluation"]["assets"]) == {"TEST_ASSET"}
     assert result["artifacts"]["metadata"]["size_bytes"] == 10
