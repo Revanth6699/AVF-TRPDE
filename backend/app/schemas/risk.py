@@ -45,6 +45,7 @@ class RiskResponse(BaseModel):
     risk_points: list[RiskPoint] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    aggregation: str = "mean_over_common_asset_date_observations"
     status: str
 
 
