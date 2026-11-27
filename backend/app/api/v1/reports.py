@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -194,7 +195,7 @@ def _build_sections(request: ReportRequest, start: pd.Timestamp, end: pd.Timesta
 
 
 def _write_artifacts(request: ReportRequest, generated_at: datetime, sections: list[ReportSection]) -> list[ReportArtifact]:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(os.environ.get("AVF_REPORT_OUTPUT_DIR", Path(__file__).resolve().parents[4])).resolve()
     directory = root / "reports" / request.experiment_name
     directory.mkdir(parents=True, exist_ok=True)
     json_path = directory / f"{request.report_type}.json"
