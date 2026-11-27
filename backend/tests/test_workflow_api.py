@@ -92,5 +92,5 @@ def test_portfolio_and_stress_api_workflow(tmp_path, monkeypatch) -> None:
         StressRunRequest(experiment_name="exp-1", strategy="static")
     )
     assert stress_result.status == "completed"
-    assert stress_result.scenario_count == 4
+    assert stress_result.scenario_count == 5
     assert store.get_stress_result("exp-1", "static") is not None
