@@ -9918,3 +9918,5 @@ tr:hover td { background: var(--surface-hover); }
 .portfolio-comparison-panel .section-heading > span { color: var(--text-muted); font-size: 9px; }
 @media (max-width: 900px) { .forecast-form-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .forecast-evaluation-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 620px) { .forecast-form-grid, .forecast-output-metrics, .forecast-evaluation-grid { grid-template-columns: 1fr; } .forecast-scope-heading, .forecast-output-heading { align-items: flex-start; flex-direction: column; } .forecast-action-row { flex-direction: column; } .forecast-action-row button { width: 100%; } .forecast-chart-container { height: 230px; } }
+
+.route-loading { display: grid; place-items: center; min-height: 45vh; color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; }
