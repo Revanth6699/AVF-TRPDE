@@ -1,0 +1,46 @@
+name: Real market data validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/run_real_market_validation.py"
+      - ".github/workflows/real-market-validation.yml"
+      - "backend/**"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  real-market-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run real-market end-to-end validation
+        run: python scripts/run_real_market_validation.py
+      - name: Upload dataset and research outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avf-real-market-validation
+          path: |
+            data/real_market/
+            validation_output/
+            experiments/real_btcusd_walk_forward_8y/
+            reports/real_market_validation/
+            storage/duckdb/
+          if-no-files-found: warn
+          retention-days: 30
