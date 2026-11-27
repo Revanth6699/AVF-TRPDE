@@ -96,6 +96,8 @@ def test_risk_api_generates_backtests_and_common_sample_comparison(monkeypatch) 
     assert backtest.observation_count == 10
     assert backtest.asset_count == 2
     assert len(backtest.results) == 4
+    assert backtest.warnings
+    assert any("low statistical power" in warning for warning in backtest.warnings)
     assert {result.measure for result in backtest.results} == {"VaR95", "VaR99"}
     assert all(0.0 <= result.p_value <= 1.0 for result in backtest.results)
     assert all(
