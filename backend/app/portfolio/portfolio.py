@@ -287,6 +287,10 @@ def create_buy_and_hold_weights(
         frame["asset_id"].astype("string").str.strip().str.upper()
     )
     frame["return"] = pd.to_numeric(frame["return"], errors="coerce")
+    if frame["return"].isna().any() or not np.isfinite(frame["return"]).all():
+        raise PortfolioError("Buy-and-hold returns must be finite numeric simple returns.")
+    if (frame["return"] <= -1.0).any():
+        raise PortfolioError("Buy-and-hold simple returns must be greater than -100%.")
 
     normalized: dict[str, float] = {}
     for asset_id, raw_weight in initial_weights.items():
