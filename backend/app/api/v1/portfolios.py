@@ -64,6 +64,9 @@ def create_portfolio_analysis(request: PortfolioRequest) -> PortfolioResponse:
     experiment = storage.get_experiment(request.experiment_name)
     if experiment is None:
         raise HTTPException(status_code=404, detail=f"Experiment '{request.experiment_name}' was not found.")
+    configured_dataset = experiment.get("parameters", {}).get("dataset_name")
+    if configured_dataset and configured_dataset != request.dataset_name:
+        raise HTTPException(status_code=409, detail="dataset_name does not match the registered experiment configuration.")
     if request.dataset_name not in {item["name"] for item in storage.list_datasets()}:
         raise HTTPException(status_code=404, detail=f"Dataset '{request.dataset_name}' is not registered.")
 
@@ -85,6 +88,10 @@ def create_portfolio_analysis(request: PortfolioRequest) -> PortfolioResponse:
             detail="Stored forecast records are missing: " + ", ".join(missing),
         )
     frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    if frame["timestamp"].isna().any():
+        raise HTTPException(status_code=409, detail="Stored forecast records contain invalid timestamps.")
+    if frame["timestamp"].dt.tz is not None:
+        frame["timestamp"] = frame["timestamp"].dt.tz_localize(None)
     frame["asset_id"] = frame["asset_id"].astype(str).str.strip().str.upper()
     frame = frame.loc[
         frame["asset_id"].isin(assets)
