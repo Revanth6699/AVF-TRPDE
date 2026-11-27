@@ -42,7 +42,6 @@ class ForecastResponse(BaseModel):
     forecasts: list[ForecastPoint] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
-    aggregation: str = "per_asset_on_common_asset_date_observations"
     status: str
 
 
@@ -89,3 +88,4 @@ class ForecastComparisonResponse(BaseModel):
     models: list[ForecastComparisonItem] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    aggregation: str = "per_asset_on_common_asset_date_observations"
