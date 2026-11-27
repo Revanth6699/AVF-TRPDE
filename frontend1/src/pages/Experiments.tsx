@@ -199,7 +199,7 @@ function ExperimentCard({
 export default function Experiments() {
   const [experiments, setExperiments] = useState<ExperimentResponse[]>([]);
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
-  const [datasetName, setDatasetName] = useState("");\n  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);\n  const [datasetName, setDatasetName] = useState("");
+  const [datasetName, setDatasetName] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
