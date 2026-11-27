@@ -15,6 +15,9 @@ from backend.app.research.integration.dataset_resolver import (
     DatasetResolutionError,
     resolve_research_dataset,
 )
+from backend.app.research.evaluation.walk_forward_evaluation import (
+    evaluate_walk_forward_predictions,
+)
 from backend.app.research.regimes.hmm import HMMConfig
 from backend.app.research.models.xgboost import XGBoostConfig
 from backend.app.research.walk_forward.runner import (
@@ -517,6 +520,26 @@ def _execute_research(
         .reset_index(drop=True)
     )
 
+    evaluation = evaluate_walk_forward_predictions(
+        combined_predictions,
+        metrics=tuple(experiment.metrics),
+        n_bootstrap=_parameter_int(
+            parameters,
+            "bootstrap_samples",
+            1_000,
+        ),
+        confidence_level=_parameter_float(
+            parameters,
+            "confidence_level",
+            0.95,
+        ),
+        random_state=_parameter_int(
+            parameters,
+            "bootstrap_random_state",
+            42,
+        ),
+    )
+
     artifact_metadata = {
         "experiment_name": experiment.name,
         "dataset_name": dataset_name,
@@ -538,6 +561,7 @@ def _execute_research(
         "parameters": parameters,
         "metadata": metadata,
         "model_results": model_results,
+        "evaluation": evaluation,
         "status": "completed",
     }
 
@@ -563,6 +587,7 @@ def _execute_research(
             model_results.keys()
         ),
         "model_results": model_results,
+        "evaluation": evaluation,
         "artifacts": {
             name: {
                 "path": str(
