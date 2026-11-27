@@ -495,6 +495,42 @@ class DuckDBStorage:
             finally:
                 connection.close()
 
+    def upsert_forecast(
+        self,
+        record: dict[str, Any],
+    ) -> None:
+        """Insert or replace a populated forecast result for an experiment/model."""
+        with self._write_lock:
+            connection = self._connect()
+            try:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO forecasts (
+                        experiment_name,
+                        dataset_name,
+                        model,
+                        forecasts,
+                        observation_count,
+                        asset_count,
+                        status,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        record["experiment_name"],
+                        record["dataset_name"],
+                        record["model"],
+                        self._json_dump(record["forecasts"]),
+                        record["observation_count"],
+                        record["asset_count"],
+                        record["status"],
+                        self._timestamp(),
+                    ],
+                )
+            finally:
+                connection.close()
+
     def get_forecast(
         self,
         experiment_name: str,
