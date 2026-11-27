@@ -151,7 +151,7 @@ export default function Datasets() {
         <div>
           <div className="page-eyebrow">Research data layer</div>
           <h1>Datasets</h1>
-          <p className="page-description">Register, inspect and validate the market datasets used by the AVF-TRPDE research pipeline.</p>
+          <p className="page-description">Register dataset metadata and verify its source, frequency and asset identifiers. This endpoint does not inspect the underlying market-data rows.</p>
         </div>
         <div className="module-header-actions">
           <button className="secondary-button" type="button" onClick={() => void loadDatasets(true)} disabled={loading || refreshing}>
