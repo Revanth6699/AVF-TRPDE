@@ -173,6 +173,8 @@ def compare_portfolios(request: PortfolioRequest) -> PortfolioComparisonResponse
         series = pd.DataFrame(record.get("return_series", []))
         if series.empty or not {"timestamp", "net_return", "gross_return", "forecast_model"} <= set(series.columns):
             continue
+        if series["forecast_model"].nunique() != 1 or str(series["forecast_model"].iloc[0]) != request.model:
+            continue
         series["timestamp"] = pd.to_datetime(series["timestamp"], errors="coerce")
         series = series.loc[series["timestamp"].between(
             _normalized_timestamp(request.start_timestamp),
