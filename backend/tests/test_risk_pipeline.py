@@ -8,6 +8,10 @@ from backend.app.risk.pipeline import (
     RiskPipelineError,
     calculate_fhs_risk_points,
 )
+from backend.app.research.models.xgboost import (
+    XGBoostModelError,
+    XGBoostVolatility,
+)
 
 
 def _predictions(rows: int = 106, assets: tuple[str, ...] = ("AAA",)) -> pd.DataFrame:
@@ -122,4 +126,30 @@ def test_fhs_requires_next_day_return_alignment_fields() -> None:
             end_timestamp="2025-01-01",
             min_observations=100,
             n_simulations=1_000,
+        )
+
+
+
+def test_next_day_return_alignment_columns_are_never_xgboost_features() -> None:
+    features = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "asset_id": ["AAA"] * 3,
+            "return": [0.01, -0.02, 0.005],
+            "realized_volatility": [0.01, 0.02, 0.015],
+            "target_timestamp": pd.date_range("2024-01-02", periods=3, freq="D"),
+            "target_return": [-0.02, 0.005, 0.01],
+        }
+    )
+
+    columns = XGBoostVolatility._resolve_feature_columns(
+        features,
+        feature_columns=None,
+    )
+    assert columns == ("return",)
+
+    with pytest.raises(XGBoostModelError, match="cannot be used as features"):
+        XGBoostVolatility._resolve_feature_columns(
+            features,
+            feature_columns=("return", "target_return"),
         )
