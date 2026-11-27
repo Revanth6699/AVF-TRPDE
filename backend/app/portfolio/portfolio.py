@@ -108,6 +108,7 @@ def calculate_portfolio_returns(
     weights_df["asset_id"] = (
         weights_df["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
@@ -115,11 +116,30 @@ def calculate_portfolio_returns(
         returns_df["return"],
         errors="coerce",
     )
+    weights_df["weight"] = pd.to_numeric(
+        weights_df["weight"],
+        errors="coerce",
+    )
 
     weights_df["weight"] = pd.to_numeric(
         weights_df["weight"],
         errors="coerce",
     )
+
+    return_keys = set(
+        zip(returns_df["timestamp"], returns_df["asset_id"], strict=True)
+    )
+    weight_keys = set(
+        zip(weights_df["timestamp"], weights_df["asset_id"], strict=True)
+    )
+    missing_weights = return_keys - weight_keys
+    missing_returns = weight_keys - return_keys
+    if missing_weights or missing_returns:
+        raise PortfolioError(
+            "Returns and weights must cover the same timestamp/asset keys; "
+            f"{len(missing_weights)} return keys lack weights and "
+            f"{len(missing_returns)} weight keys lack returns."
+        )
 
     merged = returns_df.merge(
         weights_df,
@@ -243,122 +263,92 @@ def calculate_performance(
     periods_per_year: int = 252,
 ) -> PortfolioPerformance:
     """
-    Calculate portfolio performance statistics.
+    Calculate portfolio performance statistics from periodic simple returns.
 
-    Returns are assumed to be periodic simple returns.
+    Sharpe and Sortino use the arithmetic mean of periodic excess returns.
+    Drawdown includes initial capital (wealth starts at 1.0).
     """
-
     _validate_periods_per_year(periods_per_year)
+
+    if not isinstance(risk_free_rate, (int, float, np.integer, np.floating)):
+        raise TypeError("risk_free_rate must be numeric.")
+    if not np.isfinite(risk_free_rate) or risk_free_rate <= -1.0:
+        raise PortfolioError("risk_free_rate must be finite and greater than -1.")
 
     if isinstance(portfolio_returns, pd.DataFrame):
         if "portfolio_return" not in portfolio_returns.columns:
-            raise PortfolioError(
-                "DataFrame must contain 'portfolio_return'."
-            )
-
+            raise PortfolioError("DataFrame must contain 'portfolio_return'.")
         series = portfolio_returns["portfolio_return"]
-
     elif isinstance(portfolio_returns, pd.Series):
         series = portfolio_returns
-
     else:
-        raise TypeError(
-            "portfolio_returns must be a pandas Series or DataFrame."
-        )
+        raise TypeError("portfolio_returns must be a pandas Series or DataFrame.")
 
-    series = pd.to_numeric(
-        series,
-        errors="coerce",
-    ).dropna()
-
-    if series.empty:
+    series = pd.to_numeric(series, errors="coerce").dropna()
+    if len(series) < 2:
         raise PortfolioError(
-            "Portfolio return series must not be empty."
+            "At least two valid portfolio return observations are required."
         )
 
     values = series.to_numpy(dtype=float)
-
     if not np.isfinite(values).all():
+        raise PortfolioError("Portfolio returns must contain only finite values.")
+    if (values <= -1.0).any():
         raise PortfolioError(
-            "Portfolio returns must contain only finite values."
+            "Periodic simple returns must be greater than -100%."
         )
 
-    risk_free_periodic = (
-        (1.0 + float(risk_free_rate))
-        ** (1.0 / periods_per_year)
-        - 1.0
-    )
+    gross_growth = float(np.prod(1.0 + values))
+    if not np.isfinite(gross_growth) or gross_growth <= 0.0:
+        raise PortfolioError("Compounded portfolio wealth must remain positive.")
 
-    excess_returns = values - risk_free_periodic
-
-    total_return = float(
-        np.prod(1.0 + values) - 1.0
-    )
-
+    total_return = gross_growth - 1.0
     annualized_return = float(
-        (1.0 + total_return)
-        ** (periods_per_year / len(values))
-        - 1.0
+        gross_growth ** (periods_per_year / len(values)) - 1.0
     )
+
+    periodic_risk_free = (
+        (1.0 + float(risk_free_rate)) ** (1.0 / periods_per_year) - 1.0
+    )
+    excess_returns = values - periodic_risk_free
 
     annualized_volatility = float(
-        np.std(values, ddof=1)
-        * np.sqrt(periods_per_year)
+        np.std(values, ddof=1) * np.sqrt(periods_per_year)
+    )
+    excess_std = float(np.std(excess_returns, ddof=1))
+    sharpe_ratio = (
+        float(np.mean(excess_returns) / excess_std * np.sqrt(periods_per_year))
+        if excess_std > 0.0
+        else 0.0
     )
 
-    excess_volatility = float(
-        np.std(excess_returns, ddof=1)
-        * np.sqrt(periods_per_year)
+    downside = np.minimum(excess_returns, 0.0)
+    periodic_downside_deviation = float(
+        np.sqrt(np.mean(np.square(downside)))
     )
-
-    if excess_volatility > 0.0:
-        sharpe_ratio = float(
-            (annualized_return - risk_free_rate)
-            / excess_volatility
-        )
-    else:
-        sharpe_ratio = 0.0
-
-    downside = np.minimum(
-        excess_returns,
-        0.0,
-    )
-
     downside_deviation = float(
-        np.sqrt(
-            np.mean(downside**2)
+        periodic_downside_deviation * np.sqrt(periods_per_year)
+    )
+    sortino_ratio = (
+        float(
+            np.mean(excess_returns)
+            / periodic_downside_deviation
+            * np.sqrt(periods_per_year)
         )
-        * np.sqrt(periods_per_year)
+        if periodic_downside_deviation > 0.0
+        else 0.0
     )
 
-    if downside_deviation > 0.0:
-        sortino_ratio = float(
-            (annualized_return - risk_free_rate)
-            / downside_deviation
-        )
-    else:
-        sortino_ratio = 0.0
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + values)))
+    running_peak = np.maximum.accumulate(wealth)
+    drawdowns = wealth / running_peak - 1.0
+    max_drawdown = float(np.min(drawdowns))
 
-    wealth = np.cumprod(1.0 + values)
-
-    running_max = np.maximum.accumulate(
-        wealth
+    calmar_ratio = (
+        float(annualized_return / abs(max_drawdown))
+        if max_drawdown < 0.0
+        else 0.0
     )
-
-    drawdowns = (
-        wealth / running_max
-    ) - 1.0
-
-    max_drawdown = float(
-        drawdowns.min()
-    )
-
-    if max_drawdown < 0.0:
-        calmar_ratio = float(
-            annualized_return / abs(max_drawdown)
-        )
-    else:
-        calmar_ratio = 0.0
 
     return PortfolioPerformance(
         total_return=total_return,
