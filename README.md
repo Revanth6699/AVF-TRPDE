@@ -241,6 +241,32 @@ Then execute it with `POST /experiments/run`:
 The response contains executed ablations, fold and prediction counts, per-asset forecast metrics, pairwise DM results, confidence intervals, and MCS output when enough common out-of-sample observations are available. Configured risk measures are returned under `risk_measures_requested`; `risk_analysis.status` is explicitly `not_implemented` until VaR/ES estimation and backtesting are connected. The MCS calculation is not run when fewer than 10 common observations are available; the response reports that limitation rather than inventing a result. QLIKE is calculated on variance: the API receives volatility standard deviations and squares their ratio when computing the loss.
 
 This workflow does not execute VaR/ES backtesting or portfolio analysis. Those remain separate backend work.
+## Running FHS Risk Analysis
+
+Run the experiment first. Its prediction artifact must contain `target_timestamp` and `target_return`; re-run experiments created before this alignment contract was added. The forecast at feature date t predicts next-day realized volatility, so the FHS risk observation is aligned to the return at `target_timestamp` (t+1), not the return at t.
+
+Create risk forecasts with `POST /risk`:
+
+```json
+{
+  "experiment_name": "volatility-ablation",
+  "dataset_name": "YOUR_REGISTERED_DATASET",
+  "model": "A0",
+  "assets": ["AAPL"],
+  "confidence_levels": [0.95, 0.99],
+  "start_timestamp": "2024-01-01T00:00:00",
+  "end_timestamp": "2026-01-01T00:00:00"
+}
+```
+
+The current FHS workflow uses an expanding history of prior out-of-sample standardized returns, independently per asset. It requires at least 100 prior out-of-sample observations before producing the first risk point and draws 10,000 empirical-residual simulations for each forecast. The current return is added to history only after that date's risk forecast has been produced. Output measures are VaR95, VaR99, and ES95.
+
+Run VaR backtesting with `POST /risk/backtest` using the same request. The response includes per-asset Kupiec unconditional-coverage and Christoffersen independence/conditional-coverage diagnostics. It also returns warnings when the sample is short or the expected exception count is small; do not interpret those p-values as strong evidence when warnings are present.
+
+Compare at least two completed model risk results with `POST /risk/compare`. The request uses the same experiment, dataset, assets, confidence levels, and date range; omit `model` to compare all stored models. The reported VaR/ES values are means over the common asset/date observations, not the latest point or a portfolio-level risk estimate.
+
+Risk results are generated from the persisted experiment Parquet artifact. The full eight-year daily / three-year intraday market dataset has not yet been validated, so synthetic CI results are integration evidence only, not empirical risk findings.
+
 ## Research Interpretation
 
 The project is designed to evaluate several connected questions:

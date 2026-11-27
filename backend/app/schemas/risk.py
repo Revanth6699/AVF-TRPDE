@@ -12,7 +12,7 @@ class RiskRequest(BaseModel):
 
     experiment_name: str = Field(min_length=1)
     dataset_name: str = Field(min_length=1)
-    model: str = Field(min_length=1)
+    model: str | None = Field(default=None, min_length=1)
     assets: list[str] = Field(min_length=1)
     confidence_levels: list[float] = Field(min_length=1)
     start_timestamp: datetime
@@ -29,6 +29,9 @@ class RiskPoint(BaseModel):
     var_95: float
     var_99: float
     es_95: float
+    actual_return: float
+    forecast_volatility: float = Field(gt=0.0)
+    history_count: int = Field(ge=0)
 
 
 class RiskResponse(BaseModel):
@@ -51,6 +54,7 @@ class RiskBacktestResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
+    asset_id: str
     confidence_level: float = Field(gt=0.0, lt=1.0)
     measure: str
     observations: int = Field(ge=0)
@@ -58,6 +62,10 @@ class RiskBacktestResult(BaseModel):
     violation_rate: float = Field(ge=0.0, le=1.0)
     statistic: float | None = None
     p_value: float | None = Field(default=None, ge=0.0, le=1.0)
+    independence_statistic: float | None = None
+    independence_p_value: float | None = Field(default=None, ge=0.0, le=1.0)
+    conditional_coverage_statistic: float | None = None
+    conditional_coverage_p_value: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class RiskBacktestResponse(BaseModel):
@@ -69,6 +77,7 @@ class RiskBacktestResponse(BaseModel):
     results: list[RiskBacktestResult] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class RiskComparisonItem(BaseModel):
@@ -91,3 +100,4 @@ class RiskComparisonResponse(BaseModel):
     models: list[RiskComparisonItem] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    aggregation: str = "mean_over_common_asset_date_observations"

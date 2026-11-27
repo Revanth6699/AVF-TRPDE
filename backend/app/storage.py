@@ -636,6 +636,42 @@ class DuckDBStorage:
             finally:
                 connection.close()
 
+    def upsert_risk(
+        self,
+        record: dict[str, Any],
+    ) -> None:
+        """Insert or replace a completed risk result for an experiment/model."""
+        with self._write_lock:
+            connection = self._connect()
+            try:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO risk_results (
+                        experiment_name,
+                        dataset_name,
+                        model,
+                        risk_points,
+                        observation_count,
+                        asset_count,
+                        status,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        record["experiment_name"],
+                        record["dataset_name"],
+                        record["model"],
+                        self._json_dump(record["risk_points"]),
+                        record["observation_count"],
+                        record["asset_count"],
+                        record["status"],
+                        self._timestamp(),
+                    ],
+                )
+            finally:
+                connection.close()
+
     def get_risk(
         self,
         experiment_name: str,

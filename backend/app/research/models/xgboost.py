@@ -15,9 +15,17 @@ IDENTIFIER_COLUMNS = (
 
 DEFAULT_EXCLUDED_COLUMNS = (
     "target",
+    "target_timestamp",
+    "target_return",
     "realized_volatility",
     "realized_variance",
 )
+
+FORBIDDEN_FEATURE_COLUMNS = {
+    "target",
+    "target_timestamp",
+    "target_return",
+}
 
 
 class XGBoostModelError(ValueError):
@@ -392,6 +400,15 @@ class XGBoostVolatility:
         if not columns:
             raise XGBoostModelError(
                 "No usable feature columns were found."
+            )
+
+        leaked_columns = sorted(
+            set(columns).intersection(FORBIDDEN_FEATURE_COLUMNS)
+        )
+        if leaked_columns:
+            raise XGBoostModelError(
+                "Target and forward-alignment columns cannot be used as features: "
+                + ", ".join(leaked_columns)
             )
 
         for column in columns:
