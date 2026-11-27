@@ -541,6 +541,24 @@ def _execute_research(
         .reset_index(drop=True)
     )
 
+    # Each model forecast is generated at t for next-day realized
+    # volatility at t+1. Attach the matching t+1 return from the
+    # same research calendar for downstream FHS risk analysis.
+    target_alignment = research_dataframe.loc[
+        :,
+        ["timestamp", "asset_id", "target_timestamp", "target_return"],
+    ]
+    combined_predictions = combined_predictions.merge(
+        target_alignment,
+        on=["timestamp", "asset_id"],
+        how="left",
+        validate="many_to_one",
+    )
+    if combined_predictions[["target_timestamp", "target_return"]].isna().any().any():
+        raise ValueError(
+            "Forecast output could not be aligned to the next-day return calendar."
+        )
+
     evaluation = evaluate_walk_forward_predictions(
         combined_predictions,
         metrics=tuple(experiment.metrics),
