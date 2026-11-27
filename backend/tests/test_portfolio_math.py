@@ -85,6 +85,13 @@ def test_portfolio_returns_apply_pre_return_weights_to_simple_returns() -> None:
     )
 
 
+def test_undefined_zero_denominator_ratios_are_not_reported_as_zero() -> None:
+    result = calculate_performance(pd.Series([0.01, 0.01, 0.01]))
+    assert result.sharpe_ratio is None
+    assert result.sortino_ratio is None
+    assert result.calmar_ratio is None
+
+
 def test_portfolio_return_calculation_rejects_partial_asset_panels() -> None:
     returns = pd.DataFrame(
         {
