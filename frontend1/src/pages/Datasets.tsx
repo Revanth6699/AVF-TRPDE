@@ -123,6 +123,7 @@ export default function Datasets() {
         source: response.source,
         frequency: response.frequency,
         asset_count: response.assets.length,
+        assets: response.assets,
         row_count: response.row_count,
         start_timestamp: response.start_timestamp,
         end_timestamp: response.end_timestamp,
