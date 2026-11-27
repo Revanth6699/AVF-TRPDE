@@ -133,7 +133,10 @@ def execute_portfolio(
         else:
             proposed = np.clip(proposed, -max_position, max_position)
         proposed_turnover = float(np.abs(proposed - previous).sum())
-        if strategy != "buy_and_hold" and proposed_turnover > max_turnover and proposed_turnover > 0:
+        if strategy == "buy_and_hold" and not position_rows and proposed_turnover > max_turnover:
+            # Limit the initial capital deployment; after that no rebalancing occurs.
+            proposed = previous + (proposed - previous) * (max_turnover / proposed_turnover)
+        elif strategy != "buy_and_hold" and proposed_turnover > max_turnover and proposed_turnover > 0:
             proposed = previous + (proposed - previous) * (max_turnover / proposed_turnover)
         turnover = float(np.abs(proposed - previous).sum())
         day_returns = returns_matrix.loc[timestamp, assets].to_numpy(dtype=float)
