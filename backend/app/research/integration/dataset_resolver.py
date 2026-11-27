@@ -70,11 +70,14 @@ def _load_file(path_value: str | Path) -> pd.DataFrame:
 def _normalize_interval(frequency: str, parameters: dict[str, Any]) -> str:
     normalized = frequency.strip().lower()
     if normalized in DAILY_INTERVALS:
-        return str(parameters.get("interval", DAILY_INTERVALS[normalized])).lower()
+        # Daily source data must remain daily. Intraday sampling is a
+        # separate input and is configured with intraday_interval.
+        return DAILY_INTERVALS[normalized]
     if normalized in INTRADAY_INTERVALS:
-        default = parameters.get("intraday_interval", INTRADAY_INTERVALS[normalized])
-        return str(parameters.get("interval", default)).lower()
-    return str(parameters.get("interval", normalized)).lower()
+        selected = str(parameters.get("intraday_interval", INTRADAY_INTERVALS[normalized])).lower()
+        return INTRADAY_INTERVALS.get(selected, selected)
+    selected = str(parameters.get("interval", normalized)).lower()
+    return INTRADAY_INTERVALS.get(selected, selected)
 
 
 def _validate_ohlcv_frame(dataframe: pd.DataFrame, assets: tuple[str, ...]) -> pd.DataFrame:
@@ -184,7 +187,7 @@ def _load_intraday_dataset(
             )
         start = _parse_datetime(parameters["intraday_start_timestamp"])
         end = _inclusive_end(_parse_datetime(parameters.get("intraday_end_timestamp", dataset["end_timestamp"])))
-        interval = str(parameters.get("intraday_interval", "5min")).lower()
+        interval = _normalize_interval("intraday", parameters)
         if start > end:
             raise DatasetResolutionError("Intraday start timestamp is after intraday end timestamp.")
         frames = []
