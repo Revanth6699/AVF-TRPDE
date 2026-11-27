@@ -118,7 +118,11 @@ def _build_sections(request: ReportRequest, start: pd.Timestamp, end: pd.Timesta
         try:
             metadata = load_experiment_metadata(request.experiment_name)
             evaluation = metadata.get("evaluation", {})
-            content = json.dumps(_json_safe(evaluation), indent=2, sort_keys=True) if evaluation else "The experiment artifact contains no evaluation or statistical-test results."
+            content = (
+                "The following evaluation belongs to the complete experiment artifact; "
+                "it is not recomputed for the report's selected date subset.\n\n"
+                + json.dumps(_json_safe(evaluation), indent=2, sort_keys=True)
+            ) if evaluation else "The experiment artifact contains no evaluation or statistical-test results."
         except (ExperimentArtifactError, OSError, ValueError):
             content = "Experiment evaluation artifacts were not found. No statistical conclusion is inferred."
         sections.append(ReportSection(title="Forecast evaluation and statistical tests", content=content, metrics={}))
@@ -179,6 +183,8 @@ def _build_sections(request: ReportRequest, start: pd.Timestamp, end: pd.Timesta
             f"valid scenarios={record['summary'].get('valid_scenario_count')}"
             for record in records
         ]
+        if lines:
+            lines.append("Stress scenario results use the complete portfolio return series and are not restricted to the report date subset.")
         sections.append(ReportSection(
             title="Stress-test results",
             content="\n".join(lines) if lines else "No persisted stress-test results were found. Run POST /stress/run after portfolio execution.",
