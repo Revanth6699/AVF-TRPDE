@@ -11,7 +11,7 @@ from backend.app.research.evaluation.walk_forward_evaluation import (
 from backend.app.research.evaluation.forecast_metrics import calculate_qlike
 from backend.app.research.evaluation.diebold_mariano import diebold_mariano_test
 from backend.app.research.evaluation.bootstrap import bootstrap_metric
-from backend.app.research.evaluation.model_confidence_set import build_loss_matrix
+from backend.app.research.evaluation.mcs import build_loss_matrix
 
 
 def _predictions() -> pd.DataFrame:
