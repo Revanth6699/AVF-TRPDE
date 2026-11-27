@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";import { apiClient } from "../api/client";
+import type { FormEvent } from "react";\nimport { createRiskAnalysis, getRiskAnalysis, backtestRisk, compareRisk } from "../api/risk";
 
 type RiskPoint = {
   timestamp: string;
@@ -1116,42 +1116,11 @@ export default function Risk() {
 
                 <div className="form-field">
                   <span>Confidence levels</span>
-
-                  <div className="risk-toggle-row">
-                    {CONFIDENCE_LEVELS.map(
-                      (label) => {
-                        const value =
-                          Number.parseInt(
-                            label,
-                            10,
-                          ) / 100;
-
-                        const active =
-                          request.confidence_levels.includes(
-                            value,
-                          );
-
-                        return (
-                          <button
-                            type="button"
-                            key={label}
-                            className={`risk-toggle ${
-                              active
-                                ? "risk-toggle-active"
-                                : ""
-                            }`}
-                            onClick={() =>
-                              toggleConfidence(
-                                value,
-                              )
-                            }
-                          >
-                            {label}
-                          </button>
-                        );
-                      },
-                    )}
+                  <div className="risk-toggle-row" aria-label="Locked confidence levels">
+                    <span className="risk-toggle risk-toggle-active">95%</span>
+                    <span className="risk-toggle risk-toggle-active">99%</span>
                   </div>
+                  <small>The backend research protocol requires both 95% and 99% VaR levels.</small>
                 </div>
 
                 <label className="form-field">
