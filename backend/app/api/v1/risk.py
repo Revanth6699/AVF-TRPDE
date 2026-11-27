@@ -321,6 +321,7 @@ def backtest_risk(
 
     frame = _filter_risk_points(record, request, start, end)
     results: list[RiskBacktestResult] = []
+    warnings: list[str] = []
 
     for asset_id, asset_frame in frame.groupby("asset_id", sort=True):
         if len(asset_frame) < 2:
@@ -332,12 +333,24 @@ def backtest_risk(
                 ),
             )
         actual_returns = asset_frame["actual_return"].to_numpy(dtype=float)
+        if len(asset_frame) < 250:
+            warnings.append(
+                f"Asset '{asset_id}' has only {len(asset_frame)} backtest observations; "
+                "coverage and independence tests may have low statistical power."
+            )
 
         for confidence_level, column in (
             (0.95, "var_95"),
             (0.99, "var_99"),
         ):
             var_losses = asset_frame[column].to_numpy(dtype=float)
+            expected_exceptions = len(asset_frame) * (1.0 - confidence_level)
+            if expected_exceptions < 5:
+                warnings.append(
+                    f"Asset '{asset_id}' at VaR{int(confidence_level * 100)} has "
+                    f"only {expected_exceptions:.2f} expected exceptions under the null; "
+                    "interpret p-values cautiously."
+                )
             try:
                 kupiec = kupiec_unconditional_coverage(
                     actual_returns,
@@ -378,6 +391,7 @@ def backtest_risk(
         results=results,
         observation_count=len(frame),
         asset_count=frame["asset_id"].nunique(),
+        warnings=warnings,
     )
 
 
