@@ -43,9 +43,6 @@ class PortfolioPerformance:
 def calculate_portfolio_returns(
     returns: pd.DataFrame,
     weights: pd.DataFrame,
-    *,
-    risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
 ) -> PortfolioResult:
     """
     Calculate portfolio returns from asset returns and portfolio weights.
@@ -63,12 +60,6 @@ def calculate_portfolio_returns(
         Weight at timestamp t is applied to the corresponding asset
         return at timestamp t.
 
-    risk_free_rate:
-        Annualized risk-free rate used for Sharpe and Sortino calculations.
-
-    periods_per_year:
-        Number of return observations per year.
-
     Returns
     -------
     PortfolioResult
@@ -77,7 +68,6 @@ def calculate_portfolio_returns(
 
     _validate_returns(returns)
     _validate_weights(weights)
-    _validate_periods_per_year(periods_per_year)
 
     returns_df = returns.loc[
         :,
