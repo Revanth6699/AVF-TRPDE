@@ -91,7 +91,7 @@ export default function Portfolios() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [comparison, setComparison] = useState<PortfolioComparisonResponse | null>(null);
-  const [comparing, setComparing] = useState(false);\n  const [comparison, setComparison] = useState<PortfolioComparisonResponse | null>(null);\n  const [comparing, setComparing] = useState(false);
+  const [comparing, setComparing] = useState(false);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
