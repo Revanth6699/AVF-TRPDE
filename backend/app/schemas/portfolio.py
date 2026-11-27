@@ -44,6 +44,7 @@ class PortfolioResponse(BaseModel):
     experiment_name: str
     dataset_name: str
     strategy: str
+    model: str
 
     positions: list[PortfolioPosition]
     return_series: list[dict] = Field(default_factory=list)
@@ -84,6 +85,7 @@ class PortfolioComparisonItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy: str = Field(min_length=1)
+    model: str = Field(min_length=1)
 
     total_return: float
     volatility: float = Field(ge=0.0)
