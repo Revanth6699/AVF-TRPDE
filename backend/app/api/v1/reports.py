@@ -33,10 +33,14 @@ def _validate_request(request: ReportRequest) -> tuple[pd.Timestamp, pd.Timestam
         raise HTTPException(status_code=422, detail="report_type may contain only letters, numbers, underscores, and hyphens.")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", request.experiment_name):
         raise HTTPException(status_code=422, detail="experiment_name contains unsupported path characters.")
-    if storage.get_experiment(request.experiment_name) is None:
+    experiment = storage.get_experiment(request.experiment_name)
+    if experiment is None:
         raise HTTPException(status_code=404, detail=f"Experiment '{request.experiment_name}' was not found.")
     if storage.get_dataset(request.dataset_name) is None:
         raise HTTPException(status_code=404, detail=f"Dataset '{request.dataset_name}' was not found.")
+    configured_dataset = experiment.get("parameters", {}).get("dataset_name")
+    if configured_dataset and configured_dataset != request.dataset_name:
+        raise HTTPException(status_code=409, detail="dataset_name does not match the registered experiment configuration.")
     return start, end
 
 
