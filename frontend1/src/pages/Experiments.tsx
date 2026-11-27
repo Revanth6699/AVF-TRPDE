@@ -217,9 +217,10 @@ export default function Experiments() {
 
   async function loadExperiments(showRefresh = false) {
     try {
-      if (showRefresh) setRefreshing(true);
-
-      setError("");
+      if (showRefresh) {
+        setRefreshing(true);
+        setError("");
+      }
 
       const response = await getExperiments();
       setExperiments(response.experiments);
