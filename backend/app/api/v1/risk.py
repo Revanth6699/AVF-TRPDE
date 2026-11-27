@@ -36,7 +36,7 @@ def _normalize_timestamp(value) -> pd.Timestamp:
     timestamp = pd.Timestamp(value)
     if pd.isna(timestamp):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Risk date boundaries must be valid timestamps.",
         )
     if timestamp.tzinfo is not None:
@@ -68,25 +68,25 @@ def _validate_request(
     normalized_assets = [str(asset).strip().upper() for asset in request.assets]
     if any(not asset for asset in normalized_assets):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Asset identifiers must not be empty.",
         )
     if len(set(normalized_assets)) != len(normalized_assets):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Asset identifiers must not contain duplicates.",
         )
 
     levels = [round(float(level), 8) for level in request.confidence_levels]
     if sorted(levels) != [0.95, 0.99] or len(levels) != 2:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="The locked risk workflow requires exactly confidence levels 0.95 and 0.99.",
         )
 
     if require_model and not request.model:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="model is required for risk generation and backtesting.",
         )
 
@@ -240,7 +240,7 @@ def create_risk_analysis(
         code = (
             status.HTTP_409_CONFLICT
             if "No risk points were produced" in message
-            else status.HTTP_422_UNPROCESSABLE_ENTITY
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
         )
         raise HTTPException(status_code=code, detail=message) from exc
 
@@ -364,7 +364,7 @@ def backtest_risk(
                 )
             except ValueError as exc:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail=f"VaR backtesting failed for asset '{asset_id}': {exc}",
                 ) from exc
 
