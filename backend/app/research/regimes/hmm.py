@@ -147,8 +147,8 @@ class HMMRegimeDetector:
                     raise HMMError(
                         "HMM EM likelihood decreased materially on the final iteration."
                     )
-                if final_delta >= self.config.tol and candidate.monitor_.iter >= self.config.n_iter:
-                    raise HMMError("HMM optimizer reached its iteration limit before convergence.")
+                if final_delta >= self.config.tol:
+                    raise HMMError("HMM optimizer did not reach the configured convergence tolerance.")
 
                 self._regularize_fitted_covariances()
                 self._validate_fitted_covariances()
