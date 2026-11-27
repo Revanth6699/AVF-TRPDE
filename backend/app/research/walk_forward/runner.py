@@ -81,6 +81,28 @@ PredictionFunction = Callable[
     pd.DataFrame,
 ]
 
+def _update_gjr_variance(
+    model: GJRGARCH,
+    previous_variance: float,
+    observed_return: float,
+) -> float:
+    """Update a fitted GJR-GARCH filter with one newly observed return.
+
+    Parameters remain fixed at their training-fold estimates. This avoids
+    re-estimating GARCH parameters on out-of-sample observations.
+    """
+    residual = float(observed_return) - model.mu
+    squared_residual = residual * residual
+    variance = (
+        model.omega
+        + model.alpha * squared_residual
+        + model.gamma * (residual < 0.0) * squared_residual
+        + model.beta * float(previous_variance)
+    )
+    if not np.isfinite(variance) or variance < 0.0:
+        raise WalkForwardRunnerError("GJR-GARCH produced an invalid filtered variance.")
+    return float(variance)
+
 
 class WalkForwardRunner:
     """
@@ -659,27 +681,27 @@ class WalkForwardRunner:
             if test_asset.empty:
                 continue
 
-            history = pd.to_numeric(
-                train_asset["return"],
-                errors="coerce",
-            ).astype(float).tolist()
+            model = GJRGARCH()
+            model.fit(
+                pd.to_numeric(train_asset["return"], errors="coerce")
+            )
+            variance = model.forecast_variance()
 
-            # Re-estimate through the observed close at t before producing
-            # the one-step-ahead forecast for target volatility at t+1.
+            # Keep GARCH parameters fixed at the training-fold estimates.
+            # At the close of each test day, filter in that day's observed
+            # return to forecast the following day's realized volatility.
             for _, row in test_asset.sort_values("timestamp").iterrows():
                 current_return = float(row["return"])
                 if not np.isfinite(current_return):
                     raise WalkForwardRunnerError(
                         f"Fold {fold.fold_id} GJR-GARCH received a non-finite test return."
                     )
-                history.append(current_return)
-                model = GJRGARCH()
-                model.fit(pd.Series(history, dtype=float))
+                variance = _update_gjr_variance(model, variance, current_return)
                 rows.append(
                     {
                         "timestamp": row["timestamp"],
                         "asset_id": asset_id,
-                        "prediction": model.forecast_volatility(),
+                        "prediction": float(np.sqrt(variance)),
                         "actual_volatility": float(row["target"]),
                     }
                 )
@@ -912,32 +934,31 @@ class WalkForwardRunner:
                     f"'{asset_id}'."
                 )
 
+            # Align each training row's feature with the following day's
+            # conditional volatility. The final training row uses the
+            # model's one-step forecast after the full training history.
+            train_forecasts = np.empty(len(conditional_volatility), dtype=float)
+            if len(conditional_volatility) > 1:
+                train_forecasts[:-1] = conditional_volatility[1:]
+            train_forecasts[-1] = model.forecast_volatility()
+
             train_result.loc[
                 train_asset.index,
                 "garch_forecast",
-            ] = conditional_volatility
+            ] = train_forecasts
 
-            history = pd.to_numeric(
-                train_asset["return"],
-                errors="coerce",
-            ).astype(float).tolist()
-
-            # Use each observed test-day return only for that day's
-            # next-day GARCH forecast. Training conditional-volatility
-            # features above remain estimated from the training fold only.
+            variance = model.forecast_variance()
             for test_index, test_row in test_asset.sort_values("timestamp").iterrows():
                 current_return = float(test_row["return"])
                 if not np.isfinite(current_return):
                     raise WalkForwardRunnerError(
                         f"Fold {fold.fold_id} GARCH received a non-finite test return."
                     )
-                forecast_model = GJRGARCH()
-                forecast_model.fit(pd.Series(history + [current_return], dtype=float))
+                variance = _update_gjr_variance(model, variance, current_return)
                 test_result.loc[
                     test_index,
                     "garch_forecast",
-                ] = forecast_model.forecast_volatility()
-                history.append(current_return)
+                ] = float(np.sqrt(variance))
 
         if (
             train_result["garch_forecast"]
