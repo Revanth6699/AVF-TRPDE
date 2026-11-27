@@ -53,6 +53,8 @@ def test_daily_frequency_maps_to_daily_provider_interval() -> None:
     assert _normalize_interval("day", {}) == "1day"
     assert _normalize_interval("1d", {}) == "1day"
     assert _normalize_interval("intraday", {}) == "5min"
+    assert _normalize_interval("daily", {"interval": "5min"}) == "1day"
+    assert _normalize_interval("intraday", {"intraday_interval": "5m"}) == "5min"
 
 
 def test_intraday_input_becomes_one_daily_observation_per_asset() -> None:
