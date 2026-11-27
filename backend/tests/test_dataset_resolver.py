@@ -65,7 +65,7 @@ def test_intraday_input_becomes_one_daily_observation_per_asset() -> None:
     assert not result.duplicated(["asset_id", "timestamp"]).any()
     assert result["timestamp"].dt.normalize().equals(result["timestamp"])
     assert result["target_timestamp"].gt(result["timestamp"]).all()
-    assert np.isfinite(result[["realized_variance", "realized_volatility", "target"]]).all().all()
+    assert np.isfinite(result[["realized_variance", "realized_volatility", "target", "target_return"]]).all().all()
 
     # Four source trading days: the first has no lagged daily return and
     # the final has no next-day target, leaving two supervised observations.
