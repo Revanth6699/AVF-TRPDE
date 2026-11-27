@@ -122,11 +122,6 @@ def calculate_portfolio_returns(
         errors="coerce",
     )
 
-    weights_df["weight"] = pd.to_numeric(
-        weights_df["weight"],
-        errors="coerce",
-    )
-
     return_keys = set(
         zip(returns_df["timestamp"], returns_df["asset_id"], strict=True)
     )
@@ -158,6 +153,10 @@ def calculate_portfolio_returns(
     merged["weighted_return"] = (
         merged["return"] * merged["weight"]
     )
+    if not np.isfinite(
+        merged["weighted_return"].to_numpy(dtype=float)
+    ).all():
+        raise PortfolioError("Weighted asset returns must be finite.")
 
     portfolio = (
         merged.groupby(
@@ -217,6 +216,11 @@ def create_static_weights(
                 "Asset identifiers must not be empty."
             )
 
+        if normalized_asset in normalized_weights:
+            raise PortfolioError(
+                f"Duplicate normalized weight for asset '{normalized_asset}'."
+            )
+
         numeric_weight = float(weight)
 
         if not np.isfinite(numeric_weight):
@@ -239,6 +243,7 @@ def create_static_weights(
     base["asset_id"] = (
         base["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
