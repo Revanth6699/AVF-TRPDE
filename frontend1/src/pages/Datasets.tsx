@@ -52,9 +52,10 @@ export default function Datasets() {
 
   async function loadDatasets(showRefresh = false) {
     try {
-      if (showRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError("");
+      if (showRefresh) {
+        setRefreshing(true);
+        setError("");
+      }
       const response = await getDatasets();
       setDatasets(response.datasets);
     } catch (err) {
@@ -90,11 +91,7 @@ export default function Datasets() {
         name: dataset.name,
         source: dataset.source,
         frequency: dataset.frequency,
-        assets: [dataset.name],
-        start_timestamp: dataset.start_timestamp ?? "",
-        end_timestamp: dataset.end_timestamp ?? "",
-        row_count: dataset.row_count,
-        fingerprint: dataset.fingerprint,
+        assets: dataset.assets,
       });
       setValidation((current) => ({
         ...current,
@@ -123,6 +120,7 @@ export default function Datasets() {
         source: response.source,
         frequency: response.frequency,
         asset_count: response.assets.length,
+        assets: response.assets,
         row_count: response.row_count,
         start_timestamp: response.start_timestamp,
         end_timestamp: response.end_timestamp,
@@ -154,7 +152,7 @@ export default function Datasets() {
         <div>
           <div className="page-eyebrow">Research data layer</div>
           <h1>Datasets</h1>
-          <p className="page-description">Register, inspect and validate the market datasets used by the AVF-TRPDE research pipeline.</p>
+          <p className="page-description">Register dataset metadata and verify its source, frequency and asset identifiers. This endpoint does not inspect the underlying market-data rows.</p>
         </div>
         <div className="module-header-actions">
           <button className="secondary-button" type="button" onClick={() => void loadDatasets(true)} disabled={loading || refreshing}>

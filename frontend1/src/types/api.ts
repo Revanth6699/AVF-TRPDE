@@ -18,6 +18,7 @@ export interface DatasetListItem {
   source: string;
   frequency: string;
   asset_count: number;
+  assets: string[];
   row_count: number;
   start_timestamp: string | null;
   end_timestamp: string | null;
@@ -28,8 +29,8 @@ export interface DatasetValidationResponse {
   valid: boolean;
   row_count: number;
   asset_count: number;
-  start_timestamp: string;
-  end_timestamp: string;
+  start_timestamp: string | null;
+  end_timestamp: string | null;
   assets: string[];
   errors: string[];
   warnings: string[];

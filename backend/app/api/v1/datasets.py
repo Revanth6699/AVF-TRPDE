@@ -170,6 +170,7 @@ def list_datasets() -> DatasetListResponse:
             source=record["source"],
             frequency=record["frequency"],
             asset_count=len(record["assets"]),
+            assets=record["assets"],
             row_count=record["row_count"],
             start_timestamp=record["start_timestamp"],
             end_timestamp=record["end_timestamp"],

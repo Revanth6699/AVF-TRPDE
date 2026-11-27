@@ -20,8 +20,11 @@ import type { FormEvent } from "react";
 
 import {
   createPortfolio,
+  getPortfolio,
+  comparePortfolios,
   type PortfolioRequest,
   type PortfolioResponse,
+  type PortfolioComparisonResponse,
 } from "../api/portfolios";
 
 type Strategy =
@@ -87,6 +90,8 @@ export default function Portfolios() {
   const [selected, setSelected] = useState<PortfolioRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [comparison, setComparison] = useState<PortfolioComparisonResponse | null>(null);
+  const [comparing, setComparing] = useState(false);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -191,13 +196,17 @@ export default function Portfolios() {
     setLoading(true);
 
     try {
-      const response = await createPortfolio({
+      const payload = {
         ...form,
         experiment_name: form.experiment_name.trim(),
         dataset_name: form.dataset_name.trim(),
-      });
+      };
+      const created = await createPortfolio(payload);
+      const response = await getPortfolio(created.experiment_name, created.strategy);
 
-      setRecords((current) => [response, ...current]);
+      setRecords((current) => [response, ...current.filter((item) =>
+        !(item.experiment_name === response.experiment_name && item.strategy === response.strategy),
+      )]);
       setSelected(response);
       setIsModalOpen(false);
     } catch (requestError) {
@@ -209,6 +218,29 @@ export default function Portfolios() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCompareStrategies() {
+    setError("");
+    if (!form.experiment_name.trim() || !form.dataset_name.trim() || !form.assets.length || !form.start_timestamp || !form.end_timestamp) {
+      setError("Complete the experiment, dataset, asset universe and date range before comparing strategies.");
+      return;
+    }
+    setComparing(true);
+    try {
+      const result = await comparePortfolios({
+        ...form,
+        experiment_name: form.experiment_name.trim(),
+        dataset_name: form.dataset_name.trim(),
+      });
+      setComparison(result);
+      setIsModalOpen(false);
+    } catch (requestError) {
+      const value = requestError as { response?: { data?: { detail?: string } }; message?: string };
+      setError(value.response?.data?.detail || value.message || "Unable to compare portfolio strategies.");
+    } finally {
+      setComparing(false);
     }
   }
 
@@ -293,6 +325,20 @@ export default function Portfolios() {
           </div>
         </article>
       </section>
+
+      {comparison && (
+        <section className="surface portfolio-comparison-panel">
+          <div className="section-heading">
+            <div><span className="section-kicker">BACKEND STRATEGY COMPARISON</span><h2>Portfolio results</h2></div>
+            <span>{comparison.observation_count.toLocaleString()} observations · {comparison.asset_count} assets</span>
+          </div>
+          <div className="table-wrap"><table className="data-table">
+            <thead><tr><th>Strategy</th><th>Total return</th><th>Volatility</th><th>Sharpe</th><th>Max drawdown</th><th>VaR 95</th><th>ES 95</th><th>Turnover</th><th>Costs</th></tr></thead>
+            <tbody>{comparison.strategies.map((item) => <tr key={item.strategy}><td>{item.strategy}</td><td>{(item.total_return * 100).toFixed(2)}%</td><td>{item.volatility.toFixed(4)}</td><td>{item.sharpe.toFixed(3)}</td><td>{(item.max_drawdown * 100).toFixed(2)}%</td><td>{item.var_95.toFixed(4)}</td><td>{item.es_95.toFixed(4)}</td><td>{item.turnover.toFixed(3)}</td><td>{item.transaction_costs.toFixed(4)}</td></tr>)}</tbody>
+          </table></div>
+          <p className="forecast-scope-hint">These are historical backtest outputs returned by the portfolio engine, not expected returns.</p>
+        </section>
+      )}
 
       <section className="portfolio-toolbar">
         <div className="search-field">
@@ -481,37 +527,6 @@ export default function Portfolios() {
             </div>
           )}
         </aside>
-      </section>
-
-      <section className="portfolio-research-section">
-        <div className="research-section-header">
-          <div>
-            <div className="section-kicker">PORTFOLIO EVALUATION</div>
-            <h2>Performance comparison</h2>
-            <p>
-              Compare portfolio strategies only when the backend research
-              pipeline returns actual comparison results.
-            </p>
-          </div>
-
-          <button className="secondary-button" type="button">
-            <BarChart3 size={16} />
-            Compare strategies
-          </button>
-        </div>
-
-        <div className="research-placeholder">
-          <BarChart3 size={22} />
-
-          <div>
-            <strong>Comparison is research-backed</strong>
-            <p>
-              Total return, volatility, Sharpe, Sortino, drawdown, VaR, ES,
-              turnover and transaction-cost metrics will appear here only when
-              produced by the portfolio comparison pipeline.
-            </p>
-          </div>
-        </div>
       </section>
 
       {isModalOpen && (
@@ -758,6 +773,9 @@ export default function Portfolios() {
                   Cancel
                 </button>
 
+                <button className="secondary-button" type="button" onClick={handleCompareStrategies} disabled={loading || comparing}>
+                  <BarChart3 size={15} />{comparing ? "Comparing…" : "Compare strategies"}
+                </button>
                 <button
                   className="primary-button"
                   type="submit"

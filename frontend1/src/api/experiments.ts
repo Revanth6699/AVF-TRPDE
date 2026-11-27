@@ -77,6 +77,7 @@ export async function runExperiments(
     await apiClient.post<ExperimentRunResponse>(
       "/experiments/run",
       payload,
+      { timeout: 600000 },
     );
 
   return response.data;

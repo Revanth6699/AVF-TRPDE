@@ -72,6 +72,7 @@ class DatasetListItem(BaseModel):
     source: str
     frequency: str
     asset_count: int = Field(ge=0)
+    assets: list[str] = Field(default_factory=list)
     row_count: int = Field(ge=0)
     start_timestamp: datetime | None = None
     end_timestamp: datetime | None = None

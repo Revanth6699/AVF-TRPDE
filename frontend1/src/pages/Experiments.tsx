@@ -13,22 +13,19 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import {
   createExperiment,
+  getExperiment,
   getExperiments,
   runExperiments,
 } from "../api/experiments";
+import { getDatasets } from "../api/datasets";
+import type { DatasetListItem } from "../types/api";
 import type {
   ExperimentRequest,
   ExperimentResponse,
   ExperimentRunResponse,
 } from "../api/experiments";
 
-const MODELS = [
-  "EWMA",
-  "GJR-GARCH",
-  "XGBoost",
-  "HMM",
-  "Regime-XGBoost",
-];
+const MODELS = ["EWMA", "GJR-GARCH", "XGBoost", "Regime-XGBoost"];
 
 const METRICS = ["MAE", "RMSE", "QLIKE"];
 
@@ -201,6 +198,8 @@ function ExperimentCard({
 
 export default function Experiments() {
   const [experiments, setExperiments] = useState<ExperimentResponse[]>([]);
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
+  const [datasetName, setDatasetName] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -220,11 +219,8 @@ export default function Experiments() {
     try {
       if (showRefresh) {
         setRefreshing(true);
-      } else {
-        setLoading(true);
+        setError("");
       }
-
-      setError("");
 
       const response = await getExperiments();
       setExperiments(response.experiments);
@@ -250,6 +246,7 @@ export default function Experiments() {
 
   useEffect(() => {
     void loadExperiments();
+    getDatasets().then((response) => setDatasets(response.datasets)).catch(() => setDatasets([]));
   }, []);
 
   const filteredExperiments = useMemo(() => {
@@ -330,13 +327,12 @@ export default function Experiments() {
 
     if (
       !form.name.trim() ||
-      !form.description.trim() ||
+      !datasetName.trim() ||
       form.models.length === 0 ||
-      form.metrics.length === 0 ||
-      form.risk_measures.length === 0
+      form.metrics.length === 0
     ) {
       setCreateError(
-        "Name, description, at least one model, metric and risk measure are required.",
+        "Choose a registered dataset, provide a name, and select at least one model and metric.",
       );
       return;
     }
@@ -349,12 +345,14 @@ export default function Experiments() {
         ...form,
         name: form.name.trim(),
         description: form.description.trim(),
+        parameters: { ...form.parameters, dataset_name: datasetName.trim() },
       };
 
       const response = await createExperiment(payload);
 
       setExperiments((current) => [...current, response]);
       setForm(emptyForm);
+      setDatasetName("");
       setShowCreate(false);
     } catch (err) {
       setCreateError(
@@ -377,6 +375,7 @@ export default function Experiments() {
       setError("");
       setRunResult(null);
 
+      await Promise.all(names.map((name) => getExperiment(name)));
       const response = await runExperiments({
         experiment_names: names,
       });
@@ -690,6 +689,15 @@ export default function Experiments() {
                     />
                   </label>
                 </div>
+
+                <label className="experiment-form-field">
+                  <span>Registered research dataset</span>
+                  <select value={datasetName} onChange={(event) => setDatasetName(event.target.value)} required>
+                    <option value="">Select a dataset</option>
+                    {datasets.map((dataset) => <option key={dataset.name} value={dataset.name}>{dataset.name} · {dataset.frequency} · {dataset.asset_count} assets</option>)}
+                  </select>
+                  {datasets.length === 0 && <small>Register a dataset before configuring an experiment.</small>}
+                </label>
 
                 <SelectionGroup
                   label="Models"

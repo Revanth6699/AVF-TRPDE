@@ -15,7 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";import { apiClient } from "../api/client";
+import type { FormEvent } from "react";
+import { createRiskAnalysis as postRiskAnalysis, getRiskAnalysis as fetchRiskAnalysis, backtestRisk as postRiskBacktest, compareRisk as postRiskComparison } from "../api/risk";
 
 type RiskPoint = {
   timestamp: string;
@@ -83,8 +84,6 @@ const MODELS = [
   "XGBoost",
   "Regime-XGBoost",
 ];
-
-const CONFIDENCE_LEVELS = ["95%", "99%"];
 
 function formatNumber(value: number | null | undefined, digits = 6) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -214,30 +213,6 @@ export default function Risk() {
     }));
   };
 
-  const toggleConfidence = (level: number) => {
-    setRequest((current) => {
-      const exists = current.confidence_levels.includes(level);
-
-      if (exists) {
-        return {
-          ...current,
-          confidence_levels:
-            current.confidence_levels.filter(
-              (item) => item !== level,
-            ),
-        };
-      }
-
-      return {
-        ...current,
-        confidence_levels: [
-          ...current.confidence_levels,
-          level,
-        ].sort(),
-      };
-    });
-  };
-
   const createRiskAnalysis = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
@@ -281,12 +256,9 @@ export default function Risk() {
     setLoading(true);
 
     try {
-      const response = await apiClient.post<RiskResponse>(
-        "/risk",
-        request,
-      );
+      const response = await postRiskAnalysis(request);
 
-      setRiskResult(response.data);
+      setRiskResult(response);
       setShowConfig(false);
     } catch (requestError: any) {
       const detail =
@@ -310,20 +282,9 @@ export default function Risk() {
     setLoading(true);
 
     try {
-      const params = request.model
-        ? { model: request.model }
-        : undefined;
+      const response = await fetchRiskAnalysis(request.experiment_name.trim(), request.model);
 
-      const response = await apiClient.get<RiskResponse>(
-        `/risk/${encodeURIComponent(
-          request.experiment_name.trim(),
-        )}`,
-        {
-          params,
-        },
-      );
-
-      setRiskResult(response.data);
+      setRiskResult(response);
       setBacktestResult(null);
       setComparisonResult(null);
     } catch (requestError: any) {
@@ -367,13 +328,9 @@ export default function Risk() {
     setBacktesting(true);
 
     try {
-      const response =
-        await apiClient.post<RiskBacktestResponse>(
-          "/risk/backtest",
-          request,
-        );
+      const response = await postRiskBacktest(request);
 
-      setBacktestResult(response.data);
+      setBacktestResult(response);
     } catch (requestError: any) {
       const detail =
         requestError?.response?.data?.detail ??
@@ -419,13 +376,9 @@ export default function Risk() {
     setComparing(true);
 
     try {
-      const response =
-        await apiClient.post<RiskComparisonResponse>(
-          "/risk/compare",
-          request,
-        );
+      const response = await postRiskComparison(request);
 
-      setComparisonResult(response.data);
+      setComparisonResult(response);
     } catch (requestError: any) {
       const detail =
         requestError?.response?.data?.detail ??
@@ -1116,42 +1069,11 @@ export default function Risk() {
 
                 <div className="form-field">
                   <span>Confidence levels</span>
-
-                  <div className="risk-toggle-row">
-                    {CONFIDENCE_LEVELS.map(
-                      (label) => {
-                        const value =
-                          Number.parseInt(
-                            label,
-                            10,
-                          ) / 100;
-
-                        const active =
-                          request.confidence_levels.includes(
-                            value,
-                          );
-
-                        return (
-                          <button
-                            type="button"
-                            key={label}
-                            className={`risk-toggle ${
-                              active
-                                ? "risk-toggle-active"
-                                : ""
-                            }`}
-                            onClick={() =>
-                              toggleConfidence(
-                                value,
-                              )
-                            }
-                          >
-                            {label}
-                          </button>
-                        );
-                      },
-                    )}
+                  <div className="risk-toggle-row" aria-label="Locked confidence levels">
+                    <span className="risk-toggle risk-toggle-active">95%</span>
+                    <span className="risk-toggle risk-toggle-active">99%</span>
                   </div>
+                  <small>The research protocol requires both 95% and 99% VaR levels.</small>
                 </div>
 
                 <label className="form-field">
