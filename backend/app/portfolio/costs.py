@@ -85,6 +85,10 @@ def calculate_net_return(
     net_return = float(
         gross_return - transaction_cost
     )
+    if net_return <= -1.0:
+        raise TransactionCostError(
+            "Transaction cost must not reduce net return to -100% or below."
+        )
 
     return NetReturnResult(
         gross_return=float(gross_return),
@@ -172,12 +176,19 @@ def calculate_net_returns(
         turnover_values * cost_rate
     )
 
+    if (gross_return_values <= -1.0).any():
+        raise TransactionCostError(
+            "gross_return must be greater than -100% per observation."
+        )
+
     result["net_return"] = (
         gross_return_values
-        - result["transaction_cost"].to_numpy(
-            dtype=float
-        )
+        - result["transaction_cost"].to_numpy(dtype=float)
     )
+    if (result["net_return"] <= -1.0).any():
+        raise TransactionCostError(
+            "Transaction costs must not reduce net return to -100% or below."
+        )
 
     return result
 
@@ -189,10 +200,7 @@ def build_cost_analysis(
     turnover_column: str = "turnover",
     gross_return_column: str = "gross_return",
 ) -> CostAnalysisResult:
-    """
-    Build a complete transaction-cost analysis.
-    """
-
+    """Build a transaction-cost analysis using compounded total returns."""
     result = calculate_net_returns(
         portfolio_returns,
         cost_rate=cost_rate,
@@ -200,21 +208,13 @@ def build_cost_analysis(
         gross_return_column=gross_return_column,
     )
 
-    total_turnover = float(
-        result[turnover_column].sum()
-    )
+    total_turnover = float(result[turnover_column].sum())
+    total_transaction_cost = float(result["transaction_cost"].sum())
+    gross_values = result[gross_return_column].to_numpy(dtype=float)
+    net_values = result["net_return"].to_numpy(dtype=float)
 
-    total_transaction_cost = float(
-        result["transaction_cost"].sum()
-    )
-
-    total_gross_return = float(
-        result[gross_return_column].sum()
-    )
-
-    total_net_return = float(
-        result["net_return"].sum()
-    )
+    total_gross_return = float(np.prod(1.0 + gross_values) - 1.0)
+    total_net_return = float(np.prod(1.0 + net_values) - 1.0)
 
     return CostAnalysisResult(
         portfolio_returns=result,
@@ -285,30 +285,38 @@ def calculate_cost_sensitivity(
         dtype=float
     )
 
+    if not np.isfinite(turnover_values).all():
+        raise TransactionCostError(
+            "turnover must contain only finite values."
+        )
+    if not np.isfinite(gross_return_values).all():
+        raise TransactionCostError(
+            "gross_return must contain only finite values."
+        )
+
     if (turnover_values < 0).any():
         raise TransactionCostError(
             "turnover must not contain negative values."
         )
 
+    if (gross_return_values <= -1.0).any():
+        raise TransactionCostError(
+            "gross_return must be greater than -100% per observation."
+        )
+
     rows: list[dict[str, float]] = []
-
-    total_turnover = float(
-        turnover_values.sum()
-    )
-
-    total_gross_return = float(
-        gross_return_values.sum()
-    )
+    total_turnover = float(turnover_values.sum())
+    total_gross_return = float(np.prod(1.0 + gross_return_values) - 1.0)
 
     for rate in validated_rates:
-        total_transaction_cost = float(
-            total_turnover * rate
-        )
-
-        total_net_return = float(
-            total_gross_return
-            - total_transaction_cost
-        )
+        transaction_costs = turnover_values * rate
+        net_values = gross_return_values - transaction_costs
+        if (net_values <= -1.0).any():
+            raise TransactionCostError(
+                "A cost-rate assumption would reduce net return to -100% or below."
+            )
+        total_transaction_cost = float(transaction_costs.sum())
+        total_net_return = float(np.prod(1.0 + net_values) - 1.0)
 
         rows.append(
             {
@@ -424,6 +432,10 @@ def _validate_return(
     if not np.isfinite(value):
         raise TransactionCostError(
             "gross_return must be finite."
+        )
+    if value <= -1.0:
+        raise TransactionCostError(
+            "gross_return must be greater than -100%."
         )
 
 

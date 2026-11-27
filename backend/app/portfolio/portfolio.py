@@ -33,19 +33,16 @@ class PortfolioPerformance:
     total_return: float
     annualized_return: float
     annualized_volatility: float
-    sharpe_ratio: float
+    sharpe_ratio: float | None
     downside_deviation: float
-    sortino_ratio: float
+    sortino_ratio: float | None
     max_drawdown: float
-    calmar_ratio: float
+    calmar_ratio: float | None
 
 
 def calculate_portfolio_returns(
     returns: pd.DataFrame,
     weights: pd.DataFrame,
-    *,
-    risk_free_rate: float = 0.0,
-    periods_per_year: int = 252,
 ) -> PortfolioResult:
     """
     Calculate portfolio returns from asset returns and portfolio weights.
@@ -63,12 +60,6 @@ def calculate_portfolio_returns(
         Weight at timestamp t is applied to the corresponding asset
         return at timestamp t.
 
-    risk_free_rate:
-        Annualized risk-free rate used for Sharpe and Sortino calculations.
-
-    periods_per_year:
-        Number of return observations per year.
-
     Returns
     -------
     PortfolioResult
@@ -77,7 +68,6 @@ def calculate_portfolio_returns(
 
     _validate_returns(returns)
     _validate_weights(weights)
-    _validate_periods_per_year(periods_per_year)
 
     returns_df = returns.loc[
         :,
@@ -102,12 +92,14 @@ def calculate_portfolio_returns(
     returns_df["asset_id"] = (
         returns_df["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
     weights_df["asset_id"] = (
         weights_df["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
@@ -115,11 +107,25 @@ def calculate_portfolio_returns(
         returns_df["return"],
         errors="coerce",
     )
-
     weights_df["weight"] = pd.to_numeric(
         weights_df["weight"],
         errors="coerce",
     )
+
+    return_keys = set(
+        zip(returns_df["timestamp"], returns_df["asset_id"], strict=True)
+    )
+    weight_keys = set(
+        zip(weights_df["timestamp"], weights_df["asset_id"], strict=True)
+    )
+    missing_weights = return_keys - weight_keys
+    missing_returns = weight_keys - return_keys
+    if missing_weights or missing_returns:
+        raise PortfolioError(
+            "Returns and weights must cover the same timestamp/asset keys; "
+            f"{len(missing_weights)} return keys lack weights and "
+            f"{len(missing_returns)} weight keys lack returns."
+        )
 
     merged = returns_df.merge(
         weights_df,
@@ -137,6 +143,10 @@ def calculate_portfolio_returns(
     merged["weighted_return"] = (
         merged["return"] * merged["weight"]
     )
+    if not np.isfinite(
+        merged["weighted_return"].to_numpy(dtype=float)
+    ).all():
+        raise PortfolioError("Weighted asset returns must be finite.")
 
     portfolio = (
         merged.groupby(
@@ -156,9 +166,14 @@ def calculate_portfolio_returns(
         errors="coerce",
     )
 
-    if portfolio["portfolio_return"].isna().any():
+    portfolio_values = portfolio["portfolio_return"].to_numpy(dtype=float)
+    if not np.isfinite(portfolio_values).all():
         raise PortfolioError(
-            "Portfolio return calculation produced invalid values."
+            "Portfolio return calculation produced non-finite values."
+        )
+    if (portfolio_values <= -1.0).any():
+        raise PortfolioError(
+            "Portfolio simple returns must be greater than -100%."
         )
 
     return PortfolioResult(
@@ -173,9 +188,10 @@ def create_static_weights(
     weights: dict[str, float],
 ) -> pd.DataFrame:
     """
-    Create constant portfolio weights for all timestamps.
+    Create constant-mix weights for all timestamps.
 
-    This represents the static / buy-and-hold portfolio framework.
+    These weights imply rebalancing back to the supplied proportions
+    at every timestamp. They are not a buy-and-hold weight path.
     """
 
     _validate_returns(returns)
@@ -193,6 +209,11 @@ def create_static_weights(
         if not normalized_asset:
             raise PortfolioError(
                 "Asset identifiers must not be empty."
+            )
+
+        if normalized_asset in normalized_weights:
+            raise PortfolioError(
+                f"Duplicate normalized weight for asset '{normalized_asset}'."
             )
 
         numeric_weight = float(weight)
@@ -217,12 +238,21 @@ def create_static_weights(
     base["asset_id"] = (
         base["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
     base = base.drop_duplicates(
         subset=["timestamp", "asset_id"],
     )
+
+    available_assets = set(base["asset_id"].astype(str))
+    unknown_assets = sorted(set(normalized_weights) - available_assets)
+    if unknown_assets:
+        raise PortfolioError(
+            "Weights reference assets absent from returns: "
+            + ", ".join(unknown_assets)
+        )
 
     base["weight"] = (
         base["asset_id"]
@@ -236,6 +266,103 @@ def create_static_weights(
     ).reset_index(drop=True)
 
 
+def create_buy_and_hold_weights(
+    returns: pd.DataFrame,
+    initial_weights: dict[str, float],
+) -> pd.DataFrame:
+    """
+    Create a true buy-and-hold weight path.
+
+    Initial weights must be long-only and sum to one. After each return
+    observation, holdings drift with asset returns; no rebalancing occurs.
+    Returned weights are the pre-return weights applied at each timestamp.
+    """
+    _validate_returns(returns)
+    if not initial_weights:
+        raise PortfolioError("initial_weights must contain at least one asset.")
+
+    frame = returns.loc[:, list(REQUIRED_RETURN_COLUMNS)].copy()
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame["asset_id"] = (
+        frame["asset_id"].astype("string").str.strip().str.upper()
+    )
+    frame["return"] = pd.to_numeric(frame["return"], errors="coerce")
+    if frame["return"].isna().any() or not np.isfinite(frame["return"]).all():
+        raise PortfolioError("Buy-and-hold returns must be finite numeric simple returns.")
+    if (frame["return"] <= -1.0).any():
+        raise PortfolioError("Buy-and-hold simple returns must be greater than -100%.")
+
+    normalized: dict[str, float] = {}
+    for asset_id, raw_weight in initial_weights.items():
+        asset = str(asset_id).strip().upper()
+        if not asset or asset in normalized:
+            raise PortfolioError("Initial asset identifiers must be unique and non-empty.")
+        weight = float(raw_weight)
+        if not np.isfinite(weight) or weight < 0.0:
+            raise PortfolioError("Buy-and-hold initial weights must be finite and non-negative.")
+        normalized[asset] = weight
+
+    if not np.isclose(sum(normalized.values()), 1.0, rtol=0.0, atol=1e-10):
+        raise PortfolioError("Buy-and-hold initial weights must sum to one.")
+
+    assets = set(frame["asset_id"].astype(str))
+    if set(normalized) != assets:
+        raise PortfolioError(
+            "Initial weights must cover exactly the assets in the return dataset."
+        )
+
+    date_count = frame["timestamp"].nunique()
+    asset_count = frame["asset_id"].nunique()
+    if len(frame) != date_count * asset_count:
+        raise PortfolioError(
+            "Buy-and-hold returns must contain a complete timestamp/asset panel."
+        )
+
+    current_weights = dict(normalized)
+    rows: list[dict[str, object]] = []
+
+    for timestamp, group in frame.groupby("timestamp", sort=True):
+        returns_by_asset = dict(
+            zip(group["asset_id"].astype(str), group["return"].astype(float), strict=True)
+        )
+        if set(returns_by_asset) != assets:
+            raise PortfolioError(
+                f"Buy-and-hold return panel is incomplete at {timestamp}."
+            )
+
+        for asset_id in sorted(assets):
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "asset_id": asset_id,
+                    "weight": current_weights[asset_id],
+                }
+            )
+
+        portfolio_return = sum(
+            current_weights[asset_id] * returns_by_asset[asset_id]
+            for asset_id in assets
+        )
+        growth = 1.0 + portfolio_return
+        if not np.isfinite(growth) or growth <= 0.0:
+            raise PortfolioError(
+                "Buy-and-hold portfolio wealth must remain positive."
+            )
+
+        current_weights = {
+            asset_id: (
+                current_weights[asset_id]
+                * (1.0 + returns_by_asset[asset_id])
+                / growth
+            )
+            for asset_id in assets
+        }
+
+    return pd.DataFrame(rows).sort_values(
+        ["timestamp", "asset_id"]
+    ).reset_index(drop=True)
+
+
 def calculate_performance(
     portfolio_returns: pd.Series | pd.DataFrame,
     *,
@@ -243,122 +370,92 @@ def calculate_performance(
     periods_per_year: int = 252,
 ) -> PortfolioPerformance:
     """
-    Calculate portfolio performance statistics.
+    Calculate portfolio performance statistics from periodic simple returns.
 
-    Returns are assumed to be periodic simple returns.
+    Sharpe and Sortino use the arithmetic mean of periodic excess returns.
+    Drawdown includes initial capital (wealth starts at 1.0).
     """
-
     _validate_periods_per_year(periods_per_year)
+
+    if not isinstance(risk_free_rate, (int, float, np.integer, np.floating)):
+        raise TypeError("risk_free_rate must be numeric.")
+    if not np.isfinite(risk_free_rate) or risk_free_rate <= -1.0:
+        raise PortfolioError("risk_free_rate must be finite and greater than -1.")
 
     if isinstance(portfolio_returns, pd.DataFrame):
         if "portfolio_return" not in portfolio_returns.columns:
-            raise PortfolioError(
-                "DataFrame must contain 'portfolio_return'."
-            )
-
+            raise PortfolioError("DataFrame must contain 'portfolio_return'.")
         series = portfolio_returns["portfolio_return"]
-
     elif isinstance(portfolio_returns, pd.Series):
         series = portfolio_returns
-
     else:
-        raise TypeError(
-            "portfolio_returns must be a pandas Series or DataFrame."
-        )
+        raise TypeError("portfolio_returns must be a pandas Series or DataFrame.")
 
-    series = pd.to_numeric(
-        series,
-        errors="coerce",
-    ).dropna()
-
-    if series.empty:
+    series = pd.to_numeric(series, errors="coerce").dropna()
+    if len(series) < 2:
         raise PortfolioError(
-            "Portfolio return series must not be empty."
+            "At least two valid portfolio return observations are required."
         )
 
     values = series.to_numpy(dtype=float)
-
     if not np.isfinite(values).all():
+        raise PortfolioError("Portfolio returns must contain only finite values.")
+    if (values <= -1.0).any():
         raise PortfolioError(
-            "Portfolio returns must contain only finite values."
+            "Periodic simple returns must be greater than -100%."
         )
 
-    risk_free_periodic = (
-        (1.0 + float(risk_free_rate))
-        ** (1.0 / periods_per_year)
-        - 1.0
-    )
+    gross_growth = float(np.prod(1.0 + values))
+    if not np.isfinite(gross_growth) or gross_growth <= 0.0:
+        raise PortfolioError("Compounded portfolio wealth must remain positive.")
 
-    excess_returns = values - risk_free_periodic
-
-    total_return = float(
-        np.prod(1.0 + values) - 1.0
-    )
-
+    total_return = gross_growth - 1.0
     annualized_return = float(
-        (1.0 + total_return)
-        ** (periods_per_year / len(values))
-        - 1.0
+        gross_growth ** (periods_per_year / len(values)) - 1.0
     )
+
+    periodic_risk_free = (
+        (1.0 + float(risk_free_rate)) ** (1.0 / periods_per_year) - 1.0
+    )
+    excess_returns = values - periodic_risk_free
 
     annualized_volatility = float(
-        np.std(values, ddof=1)
-        * np.sqrt(periods_per_year)
+        np.std(values, ddof=1) * np.sqrt(periods_per_year)
+    )
+    excess_std = float(np.std(excess_returns, ddof=1))
+    sharpe_ratio = (
+        float(np.mean(excess_returns) / excess_std * np.sqrt(periods_per_year))
+        if excess_std > 0.0
+        else None
     )
 
-    excess_volatility = float(
-        np.std(excess_returns, ddof=1)
-        * np.sqrt(periods_per_year)
+    downside = np.minimum(excess_returns, 0.0)
+    periodic_downside_deviation = float(
+        np.sqrt(np.mean(np.square(downside)))
     )
-
-    if excess_volatility > 0.0:
-        sharpe_ratio = float(
-            (annualized_return - risk_free_rate)
-            / excess_volatility
-        )
-    else:
-        sharpe_ratio = 0.0
-
-    downside = np.minimum(
-        excess_returns,
-        0.0,
-    )
-
     downside_deviation = float(
-        np.sqrt(
-            np.mean(downside**2)
+        periodic_downside_deviation * np.sqrt(periods_per_year)
+    )
+    sortino_ratio = (
+        float(
+            np.mean(excess_returns)
+            / periodic_downside_deviation
+            * np.sqrt(periods_per_year)
         )
-        * np.sqrt(periods_per_year)
+        if periodic_downside_deviation > 0.0
+        else None
     )
 
-    if downside_deviation > 0.0:
-        sortino_ratio = float(
-            (annualized_return - risk_free_rate)
-            / downside_deviation
-        )
-    else:
-        sortino_ratio = 0.0
+    wealth = np.concatenate(([1.0], np.cumprod(1.0 + values)))
+    running_peak = np.maximum.accumulate(wealth)
+    drawdowns = wealth / running_peak - 1.0
+    max_drawdown = float(np.min(drawdowns))
 
-    wealth = np.cumprod(1.0 + values)
-
-    running_max = np.maximum.accumulate(
-        wealth
+    calmar_ratio = (
+        float(annualized_return / abs(max_drawdown))
+        if max_drawdown < 0.0
+        else None
     )
-
-    drawdowns = (
-        wealth / running_max
-    ) - 1.0
-
-    max_drawdown = float(
-        drawdowns.min()
-    )
-
-    if max_drawdown < 0.0:
-        calmar_ratio = float(
-            annualized_return / abs(max_drawdown)
-        )
-    else:
-        calmar_ratio = 0.0
 
     return PortfolioPerformance(
         total_return=total_return,
