@@ -35,7 +35,10 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
         lambda dataset, parameters: frame.copy(),
     )
 
+    saved = {}
+
     def fake_save_artifacts(name, metadata, predictions):
+        saved["predictions"] = predictions.copy()
         return {
             "metadata": SimpleNamespace(
                 path=Path("metadata.json"),
@@ -108,6 +111,9 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
     assert result["ablations_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["models_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["prediction_rows"] == 20
+    assert {"target_timestamp", "target_return"}.issubset(
+        set(saved["predictions"].columns)
+    )
     assert set(result["model_results"]) == {"A0", "A1", "A2", "A3"}
     assert set(result["evaluation"]["assets"]) == {"SYNTH"}
     assert result["artifacts"]["metadata"]["size_bytes"] == 10
