@@ -9,7 +9,7 @@ import pandas as pd
 import backend.app.api.v1.experiments as experiment_api
 
 
-def _research_fixture(rows: int = 130) -> pd.DataFrame:
+def _research_fixture(rows: int = 131) -> pd.DataFrame:
     rng = np.random.default_rng(2026)
     returns = rng.normal(0.0002, 0.012, size=rows)
     close = 100.0 * np.exp(np.cumsum(returns))
@@ -18,7 +18,7 @@ def _research_fixture(rows: int = 130) -> pd.DataFrame:
         rng.normal(0.014, 0.002, size=rows),
         0.003,
     )
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "timestamp": pd.date_range("2024-01-02", periods=rows, freq="B"),
             "asset_id": "TEST_ASSET",
@@ -32,6 +32,8 @@ def _research_fixture(rows: int = 130) -> pd.DataFrame:
             "volume": rng.integers(100_000, 500_000, size=rows),
         }
     )
+    # The final raw observation has no next-day realized-volatility label.
+    return frame.iloc[:-1].reset_index(drop=True)
 
 
 def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None:
