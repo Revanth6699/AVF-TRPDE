@@ -73,7 +73,7 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
             description="Synthetic A0-A3 API regression",
             models=["XGBoost"],
             metrics=["MAE", "RMSE", "QLIKE"],
-            risk_measures=[],
+            risk_measures=["VaR95", "VaR99", "ES95"],
             parameters={
                 "train_size": 120,
                 "test_size": 1,
@@ -100,6 +100,7 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
 
     result = run_response.results[0].result
     assert result["status"] == "completed"
+    assert result["risk_analysis"]["status"] == "not_implemented"
     assert result["ablations_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["models_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["prediction_rows"] == 20
