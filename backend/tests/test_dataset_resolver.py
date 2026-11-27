@@ -76,15 +76,13 @@ def test_daily_input_requires_separate_intraday_observations() -> None:
         prepare_research_dataset(_daily_frame())
 
 
-def test_missing_intraday_day_is_not_skipped_when_building_next_day_target() -> None:
+def test_missing_intraday_day_does_not_skip_forward_to_a_later_target() -> None:
     daily = _daily_frame()
     intraday = _intraday_frame()
     missing_day = pd.Timestamp("2024-01-04")
     intraday = intraday.loc[intraday["timestamp"].dt.normalize() != missing_day]
 
-    result = prepare_research_dataset(daily, intraday_dataframe=intraday)
-
-    # Day 3 has no realized-volatility label. Day 2 must not silently
-    # receive day 4's volatility as its one-day-ahead target.
-    assert not result["timestamp"].eq(pd.Timestamp("2024-01-03")).any()
-    assert not result["target_timestamp"].eq(pd.Timestamp("2024-01-04")).any()
+    # The full daily calendar is retained during target shifting. Because
+    # day 3 has no RV, day 2 cannot silently be labelled with day 4's RV.
+    with pytest.raises(DatasetResolutionError, match="no complete next-day target"):
+        prepare_research_dataset(daily, intraday_dataframe=intraday)
