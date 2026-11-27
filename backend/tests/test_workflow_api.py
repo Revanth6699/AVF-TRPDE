@@ -84,6 +84,7 @@ def test_portfolio_and_stress_api_workflow(tmp_path, monkeypatch) -> None:
     )
     result = portfolios.create_portfolio_analysis(request)
     assert result.status == "completed"
+    assert result.model == "EWMA"
     assert result.observation_count == 30
     assert result.performance["net_pnl"] is not None
     assert len(store.list_portfolios("exp-1")) == 1
