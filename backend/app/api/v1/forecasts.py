@@ -143,6 +143,11 @@ def _load_model_predictions(
             status_code=status.HTTP_409_CONFLICT,
             detail="Prediction artifact contains invalid forecast timestamps.",
         )
+    if (model_frame["target_timestamp"] <= model_frame["timestamp"]).any():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Forecast target timestamps must be strictly later than their origin timestamps.",
+        )
 
     if model_frame["timestamp"].dt.tz is not None:
         model_frame["timestamp"] = model_frame["timestamp"].dt.tz_localize(None)
