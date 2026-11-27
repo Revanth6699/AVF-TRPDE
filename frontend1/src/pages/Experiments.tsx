@@ -200,7 +200,7 @@ function ExperimentCard({
 }
 
 export default function Experiments() {
-  const [experiments, setExperiments] = useState<ExperimentResponse[]>([]);
+  const [experiments, setExperiments] = useState<ExperimentResponse[]>([]);\n  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);\n  const [datasetName, setDatasetName] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -336,7 +336,7 @@ export default function Experiments() {
       form.risk_measures.length === 0
     ) {
       setCreateError(
-        "Name, description, at least one model, metric and risk measure are required.",
+        "Choose a registered dataset, provide a name, and select at least one model and metric.",
       );
       return;
     }
