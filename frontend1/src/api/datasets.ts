@@ -17,8 +17,15 @@ export async function createDataset(
   return response.data;
 }
 
+export interface DatasetValidationRequest {
+  name: string;
+  source: string;
+  frequency: string;
+  assets: string[];
+}
+
 export async function validateDataset(
-  payload: DatasetRequest,
+  payload: DatasetValidationRequest,
 ): Promise<DatasetValidationResponse> {
   const response = await apiClient.post<DatasetValidationResponse>(
     "/datasets/validate",
