@@ -77,5 +77,5 @@ def test_experiment_executor_runs_locked_a0_to_a3_ablations(monkeypatch) -> None
     assert result["models_executed"] == ["A0", "A1", "A2", "A3"]
     assert result["prediction_rows"] == 20
     assert set(result["model_results"]) == {"A0", "A1", "A2", "A3"}
-    assert set(result["evaluation"]["assets"]) == {"TEST_ASSET"}
+    assert set(result["evaluation"]["assets"]) == {"SYNTH"}
     assert result["artifacts"]["metadata"]["size_bytes"] == 10
