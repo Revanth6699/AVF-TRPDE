@@ -24,9 +24,11 @@ class ForecastPoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     timestamp: datetime
+    origin_timestamp: datetime
     asset_id: str
+    actual_return: float
     actual_volatility: float | None = None
-    predicted_volatility: float = Field(ge=0.0)
+    predicted_volatility: float = Field(gt=0.0)
 
 
 class ForecastResponse(BaseModel):
@@ -40,6 +42,7 @@ class ForecastResponse(BaseModel):
     forecasts: list[ForecastPoint] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    aggregation: str = "per_asset_on_common_asset_date_observations"
     status: str
 
 
@@ -49,6 +52,7 @@ class ForecastMetric(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
+    asset_id: str
     metric: str
     value: float
 
@@ -70,6 +74,7 @@ class ForecastComparisonItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
+    asset_id: str
     mae: float
     rmse: float
     qlike: float
