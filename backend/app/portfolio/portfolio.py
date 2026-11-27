@@ -33,11 +33,11 @@ class PortfolioPerformance:
     total_return: float
     annualized_return: float
     annualized_volatility: float
-    sharpe_ratio: float
+    sharpe_ratio: float | None
     downside_deviation: float
-    sortino_ratio: float
+    sortino_ratio: float | None
     max_drawdown: float
-    calmar_ratio: float
+    calmar_ratio: float | None
 
 
 def calculate_portfolio_returns(
@@ -436,7 +436,7 @@ def calculate_performance(
     sharpe_ratio = (
         float(np.mean(excess_returns) / excess_std * np.sqrt(periods_per_year))
         if excess_std > 0.0
-        else 0.0
+        else None
     )
 
     downside = np.minimum(excess_returns, 0.0)
@@ -453,7 +453,7 @@ def calculate_performance(
             * np.sqrt(periods_per_year)
         )
         if periodic_downside_deviation > 0.0
-        else 0.0
+        else None
     )
 
     wealth = np.concatenate(([1.0], np.cumprod(1.0 + values)))
@@ -464,7 +464,7 @@ def calculate_performance(
     calmar_ratio = (
         float(annualized_return / abs(max_drawdown))
         if max_drawdown < 0.0
-        else 0.0
+        else None
     )
 
     return PortfolioPerformance(
