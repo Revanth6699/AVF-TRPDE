@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";\nimport { createRiskAnalysis, getRiskAnalysis, backtestRisk, compareRisk } from "../api/risk";
+import type { FormEvent } from "react";\nimport { createRiskAnalysis as postRiskAnalysis, getRiskAnalysis as fetchRiskAnalysis, backtestRisk as postRiskBacktest, compareRisk as postRiskComparison } from "../api/risk";
 
 type RiskPoint = {
   timestamp: string;
