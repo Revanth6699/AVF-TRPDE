@@ -12,7 +12,7 @@ class ForecastRequest(BaseModel):
 
     experiment_name: str = Field(min_length=1)
     dataset_name: str = Field(min_length=1)
-    model: str = Field(min_length=1)
+    model: str | None = Field(default=None, min_length=1)
     assets: list[str] = Field(min_length=1)
     start_timestamp: datetime
     end_timestamp: datetime
@@ -27,7 +27,7 @@ class ForecastPoint(BaseModel):
     origin_timestamp: datetime
     asset_id: str
     actual_return: float
-    actual_volatility: float | None = None
+    actual_volatility: float
     predicted_volatility: float = Field(gt=0.0)
 
 
