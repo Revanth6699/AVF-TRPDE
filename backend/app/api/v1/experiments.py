@@ -570,6 +570,14 @@ def _execute_research(
         "models_executed": list(
             model_results.keys()
         ),
+        "risk_measures_requested": list(experiment.risk_measures),
+        "risk_analysis": {
+            "status": "not_implemented",
+            "reason": (
+                "VaR/ES estimation and backtesting are not part of the "
+                "current experiment execution workflow."
+            ),
+        },
         "ablations_requested": (
             list(ablation_names)
             if requested_ablations is not None
@@ -612,6 +620,14 @@ def _execute_research(
         "models_executed": list(
             model_results.keys()
         ),
+        "risk_measures_requested": list(experiment.risk_measures),
+        "risk_analysis": {
+            "status": "not_implemented",
+            "reason": (
+                "VaR/ES estimation and backtesting are not part of the "
+                "current experiment execution workflow."
+            ),
+        },
         "ablations_executed": (
             list(ablation_names)
             if requested_ablations is not None
