@@ -91,6 +91,10 @@ def calculate_turnover(
     """
 
     _validate_weights_input(current_weights)
+    if current_weights["timestamp"].nunique() != 1:
+        raise ConstraintError(
+            "calculate_turnover requires current weights for exactly one timestamp."
+        )
 
     if previous_weights is None:
         previous = pd.DataFrame(
@@ -104,6 +108,13 @@ def calculate_turnover(
             previous_weights,
             require_timestamp=False,
         )
+        if (
+            "timestamp" in previous_weights.columns
+            and previous_weights["timestamp"].nunique() > 1
+        ):
+            raise ConstraintError(
+                "previous_weights must represent a single portfolio snapshot."
+            )
 
         previous = previous_weights.loc[
             :,
@@ -115,8 +126,12 @@ def calculate_turnover(
         ["asset_id", "target_weight"],
     ].copy()
 
-    current["asset_id"] = current["asset_id"].astype("string")
-    previous["asset_id"] = previous["asset_id"].astype("string")
+    current["asset_id"] = (
+        current["asset_id"].astype("string").str.strip().str.upper()
+    )
+    previous["asset_id"] = (
+        previous["asset_id"].astype("string").str.strip().str.upper()
+    )
 
     current["target_weight"] = pd.to_numeric(
         current["target_weight"],
