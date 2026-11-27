@@ -222,10 +222,8 @@ def bootstrap_metric(
                 )
             )
 
-        ratio = (
-            sample_actual
-            / sample_forecast
-        )
+        # QLIKE is defined on variance; inputs are volatility standard deviations.
+        ratio = np.square(sample_actual / sample_forecast)
 
         return float(
             np.mean(

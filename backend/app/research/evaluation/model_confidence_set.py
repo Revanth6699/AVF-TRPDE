@@ -394,7 +394,8 @@ def _pointwise_loss(
             "for QLIKE."
         )
 
-    ratio = actual / forecast
+    # Inputs are volatility standard deviations; QLIKE compares variance.
+    ratio = np.square(actual / forecast)
 
     return (
         ratio

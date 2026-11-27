@@ -287,7 +287,9 @@ def _calculate_loss(
                 "QLIKE requires forecast values greater than zero."
             )
 
-        ratio = actual / forecast
+        # Inputs are standard deviations; canonical QLIKE compares
+        # the corresponding variance proxy and variance forecast.
+        ratio = np.square(actual / forecast)
 
         values = (
             ratio
