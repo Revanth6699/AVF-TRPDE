@@ -52,8 +52,10 @@ export default function Datasets() {
 
   async function loadDatasets(showRefresh = false) {
     try {
-      if (showRefresh) setRefreshing(true);
-      setError("");
+      if (showRefresh) {
+        setRefreshing(true);
+        setError("");
+      }
       const response = await getDatasets();
       setDatasets(response.datasets);
     } catch (err) {
