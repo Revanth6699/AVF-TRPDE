@@ -217,11 +217,7 @@ export default function Experiments() {
 
   async function loadExperiments(showRefresh = false) {
     try {
-      if (showRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      if (showRefresh) setRefreshing(true);
 
       setError("");
 
