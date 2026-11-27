@@ -1,1022 +1,201 @@
-import {
-  Activity,
-  AlertCircle,
-  BarChart3,
-  CheckCircle2,
-  ChevronDown,
-  Clock3,
-  Database,
-  Gauge,
-  LineChart,
-  Play,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Sparkles,
-  Target,
-  TrendingUp,
-  X,
-  Zap,
-} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Activity, BarChart3, CalendarRange, Check, Database, Download, LineChart, Play, RefreshCw } from "lucide-react";
+import { CartesianGrid, Line, LineChart as RechartsLineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { createForecast, compareForecasts, evaluateForecast, getForecast, type ForecastComparisonResponse, type ForecastEvaluationResponse, type ForecastRequest, type ForecastResponse } from "../api/forecasts";
+import { getDatasets } from "../api/datasets";
+import { getExperiments, type ExperimentResponse } from "../api/experiments";
+import type { DatasetListItem } from "../types/api";
 
-import {
-  compareForecasts,
-  getForecast,
-  type ForecastComparisonResponse,
-  type ForecastPoint,
-  type ForecastResponse,
-} from "../api/forecasts";
-
-const MODELS = [
-  {
-    key: "EWMA",
-    label: "EWMA",
-    description: "Exponentially weighted volatility baseline",
-    tone: "cyan",
-  },
-  {
-    key: "GJR-GARCH",
-    label: "GJR-GARCH",
-    description: "Asymmetric conditional volatility model",
-    tone: "violet",
-  },
-  {
-    key: "XGBoost",
-    label: "XGBoost",
-    description: "Machine-learning volatility forecaster",
-    tone: "blue",
-  },
-  {
-    key: "Regime-XGBoost",
-    label: "Regime-XGBoost",
-    description: "Regime-aware ML volatility forecaster",
-    tone: "green",
-  },
-];
-
-function formatNumber(value: number, digits = 6) {
-  if (!Number.isFinite(value)) {
-    return "—";
-  }
-
-  return value.toFixed(digits);
+const MODELS = ["EWMA", "GJR-GARCH", "XGBoost", "Regime-XGBoost"];
+function errorMessage(error: unknown): string {
+  const value = error as { response?: { data?: { detail?: string } }; message?: string };
+  return value.response?.data?.detail || value.message || "Forecast request failed.";
 }
-
-function formatDate(value: string) {
+function toLocalInput(value: string | null | undefined): string {
+  if (!value) return "";
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function toIso(value: string): string {
+  return new Date(value).toISOString();
 }
-
-function getErrorMessage(error: unknown) {
-  const candidate = error as {
-    response?: {
-      data?: {
-        detail?: string;
-      };
-    };
-    message?: string;
-  };
-
-  return (
-    candidate?.response?.data?.detail ??
-    candidate?.message ??
-    "Unable to load forecast data."
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const normalized = status.toLowerCase();
-
-  const className =
-    normalized === "completed"
-      ? "forecast-status forecast-status-success"
-      : normalized === "accepted"
-        ? "forecast-status forecast-status-info"
-        : "forecast-status";
-
-  return (
-    <span className={className}>
-      <span className="forecast-status-dot" />
-      {status}
-    </span>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Gauge;
-  tone: string;
-}) {
-  return (
-    <div className={`forecast-metric-card forecast-metric-${tone}`}>
-      <div className="forecast-metric-icon">
-        <Icon size={18} strokeWidth={1.7} />
-      </div>
-
-      <div className="forecast-metric-copy">
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </div>
-    </div>
-  );
-}
-
-function EmptyForecastState({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="forecast-empty-state">
-      <div className="forecast-empty-icon">
-        <LineChart size={24} strokeWidth={1.5} />
-      </div>
-
-      <div>
-        <h3>{title}</h3>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function ForecastChart({
-  points,
-  model,
-}: {
-  points: ForecastPoint[];
-  model: string;
-}) {
-  const validPoints = points.filter(
-    (point) =>
-      Number.isFinite(point.predicted_volatility) &&
-      Number.isFinite(new Date(point.timestamp).getTime()),
-  );
-
-  if (!validPoints.length) {
-    return (
-      <EmptyForecastState
-        title="No forecast observations"
-        description="The backend has not produced forecast points for this model yet."
-      />
-    );
-  }
-
-  const values = validPoints.flatMap((point) => [
-    point.predicted_volatility,
-    ...(point.actual_volatility === null
-      ? []
-      : [point.actual_volatility]),
-  ]);
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-
-  const width = 1000;
-  const height = 300;
-  const paddingX = 32;
-  const paddingY = 28;
-
-  const x = (index: number) =>
-    paddingX +
-    (index / Math.max(validPoints.length - 1, 1)) *
-      (width - paddingX * 2);
-
-  const y = (value: number) =>
-    height -
-    paddingY -
-    ((value - min) / range) * (height - paddingY * 2);
-
-  const predictedPath = validPoints
-    .map((point, index) => {
-      const command = index === 0 ? "M" : "L";
-
-      return `${command} ${x(index).toFixed(2)} ${y(
-        point.predicted_volatility,
-      ).toFixed(2)}`;
-    })
-    .join(" ");
-
-  const actualPoints = validPoints.filter(
-    (point) => point.actual_volatility !== null,
-  );
-
-  const actualPath =
-    actualPoints.length > 1
-      ? actualPoints
-          .map((point, index) => {
-            const originalIndex = validPoints.indexOf(point);
-            const command = index === 0 ? "M" : "L";
-
-            return `${command} ${x(originalIndex).toFixed(
-              2,
-            )} ${y(point.actual_volatility ?? 0).toFixed(2)}`;
-          })
-          .join(" ")
-      : "";
-
-  return (
-    <div className="forecast-chart">
-      <div className="forecast-chart-header">
-        <div>
-          <div className="forecast-chart-kicker">Forecast trajectory</div>
-          <h3>{model}</h3>
-        </div>
-
-        <div className="forecast-chart-legend">
-          <span>
-            <i className="forecast-legend-predicted" />
-            Predicted
-          </span>
-
-          {actualPoints.length > 0 && (
-            <span>
-              <i className="forecast-legend-actual" />
-              Actual
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="forecast-chart-canvas">
-        <svg
-          viewBox={`0 0 ${width} ${height}`}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label={`${model} volatility forecast`}
-        >
-          <defs>
-            <linearGradient
-              id="forecastArea"
-              x1="0"
-              x2="0"
-              y1="0"
-              y2="1"
-            >
-              <stop offset="0%" stopOpacity="0.20" />
-              <stop offset="100%" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          {[0, 1, 2, 3].map((row) => {
-            const gridY =
-              paddingY +
-              (row / 3) * (height - paddingY * 2);
-
-            return (
-              <line
-                key={row}
-                x1={paddingX}
-                x2={width - paddingX}
-                y1={gridY}
-                y2={gridY}
-                className="forecast-grid-line"
-              />
-            );
-          })}
-
-          <path
-            d={`${predictedPath} L ${x(validPoints.length - 1)} ${
-              height - paddingY
-            } L ${paddingX} ${height - paddingY} Z`}
-            fill="url(#forecastArea)"
-            className="forecast-area"
-          />
-
-          <path
-            d={predictedPath}
-            fill="none"
-            className="forecast-line-predicted"
-          />
-
-          {actualPath && (
-            <path
-              d={actualPath}
-              fill="none"
-              className="forecast-line-actual"
-            />
-          )}
-        </svg>
-      </div>
-
-      <div className="forecast-chart-range">
-        <span>{formatDate(validPoints[0].timestamp)}</span>
-
-        <strong>
-          {validPoints.length.toLocaleString()} observations
-        </strong>
-
-        <span>
-          {formatDate(
-            validPoints[validPoints.length - 1].timestamp,
-          )}
-        </span>
-      </div>
-    </div>
-  );
+function fmt(value: number | null | undefined, digits = 5): string {
+  return value === null || value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits);
 }
 
 export default function Forecasts() {
+  const [experiments, setExperiments] = useState<ExperimentResponse[]>([]);
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
   const [experimentName, setExperimentName] = useState("");
+  const [datasetName, setDatasetName] = useState("");
   const [model, setModel] = useState("EWMA");
-
-  const [forecast, setForecast] = useState<ForecastResponse | null>(
-    null,
-  );
-
-  const [comparison, setComparison] =
-    useState<ForecastComparisonResponse | null>(null);
-
-  const [search, setSearch] = useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [comparisonLoading, setComparisonLoading] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
-  const [comparisonError, setComparisonError] =
-    useState<string | null>(null);
-
-  const [showQueryPanel, setShowQueryPanel] = useState(false);
+  const [assets, setAssets] = useState<string[]>([]);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [comparison, setComparison] = useState<ForecastComparisonResponse | null>(null);
+  const [evaluation, setEvaluation] = useState<ForecastEvaluationResponse | null>(null);
+  const [busy, setBusy] = useState<"load" | "run" | "evaluate" | "compare" | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
-    const savedExperiment = sessionStorage.getItem(
-      "avf-selected-experiment",
-    );
-
-    if (savedExperiment) {
-      setExperimentName(savedExperiment);
-    }
+    let active = true;
+    Promise.all([getExperiments(), getDatasets()]).then(([expResponse, dataResponse]) => {
+      if (!active) return;
+      setExperiments(expResponse.experiments);
+      setDatasets(dataResponse.datasets);
+      const saved = sessionStorage.getItem("avf-selected-experiment") || expResponse.experiments[0]?.name || "";
+      setExperimentName(saved);
+      const selected = expResponse.experiments.find((item) => item.name === saved) ?? expResponse.experiments[0];
+      const linkedDataset = String(selected?.parameters?.dataset_name ?? "");
+      if (linkedDataset) setDatasetName(linkedDataset);
+      const dataset = dataResponse.datasets.find((item) => item.name === linkedDataset);
+      if (dataset) {
+        setAssets(dataset.assets);
+        setStart(toLocalInput(dataset.start_timestamp));
+        setEnd(toLocalInput(dataset.end_timestamp));
+      }
+    }).catch((requestError) => { if (active) setError(errorMessage(requestError)); });
+    return () => { active = false; };
   }, []);
 
-  const filteredPoints = useMemo(() => {
-    if (!forecast) {
-      return [];
+  const selectedDataset = datasets.find((item) => item.name === datasetName);
+  const selectedExperiment = experiments.find((item) => item.name === experimentName);
+  const availableAssets = selectedDataset?.assets ?? [];
+
+  function chooseExperiment(name: string) {
+    setExperimentName(name);
+    sessionStorage.setItem("avf-selected-experiment", name);
+    const experiment = experiments.find((item) => item.name === name);
+    const linkedDataset = String(experiment?.parameters?.dataset_name ?? "");
+    if (linkedDataset) chooseDataset(linkedDataset);
+  }
+
+  function chooseDataset(name: string) {
+    setDatasetName(name);
+    const dataset = datasets.find((item) => item.name === name);
+    if (dataset) {
+      setAssets(dataset.assets);
+      setStart(toLocalInput(dataset.start_timestamp));
+      setEnd(toLocalInput(dataset.end_timestamp));
+    } else {
+      setAssets([]);
+      setStart("");
+      setEnd("");
     }
+  }
 
-    const query = search.trim().toLowerCase();
-
-    if (!query) {
-      return forecast.forecasts;
+  function buildRequest(): ForecastRequest {
+    if (!experimentName || !datasetName || !model || assets.length === 0 || !start || !end) {
+      throw new Error("Select an experiment, linked dataset, at least one asset, and a valid date range.");
     }
+    if (new Date(start).getTime() > new Date(end).getTime()) throw new Error("Start date must be before end date.");
+    return {
+      experiment_name: experimentName,
+      dataset_name: datasetName,
+      model,
+      assets,
+      start_timestamp: toIso(start),
+      end_timestamp: toIso(end),
+    };
+  }
 
-    return forecast.forecasts.filter((point) =>
-      [
-        point.asset_id,
-        point.timestamp,
-        String(point.predicted_volatility),
-        String(point.actual_volatility ?? ""),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [forecast, search]);
-
-  const latestPoint = forecast?.forecasts.at(-1);
-
-
-  const handleLoadForecast = async () => {
-    if (!experimentName.trim()) {
-      setError("Enter an experiment name first.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setComparison(null);
-    setComparisonError(null);
-
+  async function perform(action: "load" | "run" | "evaluate" | "compare") {
+    setBusy(action); setError(""); setNotice("");
     try {
-      const response = await getForecast(
-        experimentName.trim(),
-        model,
-      );
-
-      setForecast(response);
-
-      sessionStorage.setItem(
-        "avf-selected-experiment",
-        experimentName.trim(),
-      );
+      if (action === "load") {
+        if (!experimentName.trim()) throw new Error("Choose a registered experiment.");
+        const result = await getForecast(experimentName, model);
+        setForecast(result);
+        setDatasetName(result.dataset_name);
+        setNotice(`Loaded ${result.observation_count.toLocaleString()} stored observations from the backend.`);
+      } else {
+        const request = buildRequest();
+        if (action === "run") {
+          const result = await createForecast(request);
+          setForecast(result); setComparison(null); setEvaluation(null);
+          setNotice(`Forecast generation completed: ${result.observation_count.toLocaleString()} observations.`);
+        } else if (action === "evaluate") {
+          const result = await evaluateForecast(request);
+          setEvaluation(result);
+          setNotice("Forecast evaluation completed using the selected experiment, model, assets and target-date range.");
+        } else {
+          const result = await compareForecasts(request);
+          setComparison(result);
+          setNotice("Model comparison completed on the requested research scope.");
+        }
+      }
     } catch (requestError) {
-      setForecast(null);
-      setError(getErrorMessage(requestError));
+      setError(errorMessage(requestError));
+      if (action === "run") setForecast(null);
     } finally {
-      setLoading(false);
+      setBusy(null);
     }
-  };
+  }
 
-  const handleCompare = async () => {
-    if (!experimentName.trim()) {
-      setComparisonError("Enter an experiment name first.");
-      return;
-    }
-
-    setComparisonLoading(true);
-    setComparisonError(null);
-
-    try {
-      const response = await compareForecasts({
-        experiment_name: experimentName.trim(),
-        dataset_name: "",
-        model: model,
-        assets: ["*"],
-        start_timestamp: "1970-01-01T00:00:00Z",
-        end_timestamp: "2100-01-01T00:00:00Z",
-      });
-
-      setComparison(response);
-    } catch (requestError) {
-      setComparison(null);
-      setComparisonError(getErrorMessage(requestError));
-    } finally {
-      setComparisonLoading(false);
-    }
-  };
+  const chartData = useMemo(() => (forecast?.forecasts ?? []).map((point) => ({
+    date: new Date(point.timestamp).toLocaleDateString(),
+    predicted: point.predicted_volatility,
+    actual: point.actual_volatility ?? null,
+  })), [forecast]);
 
   return (
-    <div className="page forecasts-page">
-      <section className="forecast-page-header">
-        <div className="forecast-header-copy">
-          <div className="page-eyebrow">
-            VOLATILITY RESEARCH
-          </div>
-
-          <h1>Forecasts</h1>
-
-          <p>
-            Inspect model-level volatility forecasts and compare
-            out-of-sample forecasting behaviour without introducing
-            results that have not been produced by the research
-            pipeline.
-          </p>
-        </div>
-
-        <div className="forecast-header-actions">
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={() => setShowQueryPanel(true)}
-          >
-            <SlidersHorizontal size={15} />
-            Configure view
-          </button>
-
-          <button
-            className="button button-primary"
-            type="button"
-            onClick={handleLoadForecast}
-            disabled={loading}
-          >
-            {loading ? (
-              <RefreshCw className="spin" size={15} />
-            ) : (
-              <Play size={15} />
-            )}
-            {loading ? "Loading..." : "Load forecast"}
-          </button>
-        </div>
-      </section>
-
-      <section className="forecast-query-bar">
-        <div className="forecast-query-field">
-          <Search size={17} />
-
-          <input
-            value={experimentName}
-            onChange={(event) =>
-              setExperimentName(event.target.value)
-            }
-            placeholder="Experiment name"
-            aria-label="Experiment name"
-          />
-        </div>
-
-        <div className="forecast-model-select">
-          <label htmlFor="forecast-model">MODEL</label>
-
-          <div className="forecast-select-wrap">
-            <select
-              id="forecast-model"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              {MODELS.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-
-            <ChevronDown size={15} />
-          </div>
-        </div>
-      </section>
-
-      {error && (
-        <div className="forecast-alert forecast-alert-error">
-          <AlertCircle size={18} />
-
-          <div>
-            <strong>Forecast unavailable</strong>
-            <p>{error}</p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            aria-label="Dismiss error"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      <section className="forecast-summary-grid">
-        <MetricCard
-          label="Model"
-          value={forecast?.model ?? "—"}
-          icon={Sparkles}
-          tone="cyan"
-        />
-
-        <MetricCard
-          label="Observations"
-          value={
-            forecast
-              ? forecast.observation_count.toLocaleString()
-              : "—"
-          }
-          icon={Activity}
-          tone="violet"
-        />
-
-        <MetricCard
-          label="Assets"
-          value={
-            forecast
-              ? forecast.asset_count.toLocaleString()
-              : "—"
-          }
-          icon={Database}
-          tone="blue"
-        />
-
-        <MetricCard
-          label="Latest forecast"
-          value={
-            latestPoint
-              ? formatNumber(latestPoint.predicted_volatility)
-              : "—"
-          }
-          icon={TrendingUp}
-          tone="green"
-        />
-      </section>
-
-      <section className="forecast-main-grid">
-        <div className="surface forecast-chart-surface">
-          {forecast ? (
-            <ForecastChart
-              points={forecast.forecasts}
-              model={forecast.model}
-            />
-          ) : (
-            <EmptyForecastState
-              title="Select an experiment and model"
-              description="Load a registered forecast to inspect its out-of-sample volatility trajectory."
-            />
-          )}
-        </div>
-
-        <aside className="surface forecast-context-card">
-          <div className="forecast-context-heading">
-            <div className="forecast-context-icon">
-              <Target size={18} />
-            </div>
-
-            <div>
-              <span>FORECAST CONTEXT</span>
-              <h3>Research specification</h3>
-            </div>
-          </div>
-
-          <div className="forecast-context-list">
-            <div>
-              <span>Experiment</span>
-              <strong>{forecast?.experiment_name ?? "—"}</strong>
-            </div>
-
-            <div>
-              <span>Dataset</span>
-              <strong>{forecast?.dataset_name ?? "—"}</strong>
-            </div>
-
-            <div>
-              <span>Model</span>
-              <strong>{forecast?.model ?? model}</strong>
-            </div>
-
-            <div>
-              <span>Assets</span>
-              <strong>{forecast?.asset_count ?? "—"}</strong>
-            </div>
-
-            <div>
-              <span>Status</span>
-              {forecast ? (
-                <StatusBadge status={forecast.status} />
-              ) : (
-                <strong>—</strong>
-              )}
-            </div>
-          </div>
-
-          <div className="forecast-context-note">
-            <Clock3 size={15} />
-
-            <span>
-              Forecast observations are displayed exactly as
-              returned by the backend.
-            </span>
-          </div>
-        </aside>
-      </section>
-
-      <section className="forecast-observations-section">
-        <div className="forecast-section-heading">
-          <div>
-            <div className="section-kicker">
-              OUT-OF-SAMPLE OUTPUT
-            </div>
-
-            <h2>Forecast observations</h2>
-          </div>
-
-          <div className="forecast-observation-tools">
-            <div className="forecast-search">
-              <Search size={15} />
-
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search asset or observation..."
-              />
-            </div>
-
-            <span>
-              {filteredPoints.length.toLocaleString()} rows
-            </span>
-          </div>
-        </div>
-
-        <div className="surface forecast-table-surface">
-          {!forecast ? (
-            <EmptyForecastState
-              title="No observations loaded"
-              description="Load a forecast above to populate this table."
-            />
-          ) : filteredPoints.length === 0 ? (
-            <EmptyForecastState
-              title="No matching observations"
-              description="Try a different asset, timestamp or search term."
-            />
-          ) : (
-            <div className="forecast-table-wrapper">
-              <table className="forecast-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>Asset</th>
-                    <th>Actual volatility</th>
-                    <th>Predicted volatility</th>
-                    <th>Difference</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredPoints.slice(0, 100).map((point) => {
-                    const difference =
-                      point.actual_volatility === null
-                        ? null
-                        : point.predicted_volatility -
-                          point.actual_volatility;
-
-                    return (
-                      <tr
-                        key={`${point.timestamp}-${point.asset_id}`}
-                      >
-                        <td>
-                          {formatDateTime(point.timestamp)}
-                        </td>
-
-                        <td>
-                          <span className="forecast-asset">
-                            {point.asset_id}
-                          </span>
-                        </td>
-
-                        <td>
-                          {point.actual_volatility === null
-                            ? "—"
-                            : formatNumber(
-                                point.actual_volatility,
-                              )}
-                        </td>
-
-                        <td className="forecast-predicted-value">
-                          {formatNumber(
-                            point.predicted_volatility,
-                          )}
-                        </td>
-
-                        <td>
-                          {difference === null
-                            ? "—"
-                            : formatNumber(difference)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {filteredPoints.length > 100 && (
-                <div className="forecast-table-limit">
-                  Showing the first 100 rows of{" "}
-                  {filteredPoints.length.toLocaleString()} matching
-                  observations.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="forecast-research-section">
-        <div className="forecast-section-heading">
-          <div>
-            <div className="section-kicker">
-              MODEL EVALUATION
-            </div>
-
-            <h2>Forecast comparison</h2>
-          </div>
-
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={handleCompare}
-            disabled={comparisonLoading}
-          >
-            {comparisonLoading ? (
-              <RefreshCw className="spin" size={15} />
-            ) : (
-              <BarChart3 size={15} />
-            )}
-            Compare models
-          </button>
-        </div>
-
-        {comparisonError && (
-          <div className="forecast-alert forecast-alert-warning">
-            <AlertCircle size={18} />
-
-            <div>
-              <strong>Comparison unavailable</strong>
-              <p>{comparisonError}</p>
-            </div>
-          </div>
-        )}
-
-        {comparison ? (
-          <div className="surface forecast-comparison-surface">
-            <div className="forecast-comparison-meta">
-              <span>
-                {comparison.observation_count.toLocaleString()}{" "}
-                observations
-              </span>
-
-              <span>
-                {comparison.asset_count.toLocaleString()} assets
-              </span>
-            </div>
-
-            <div className="forecast-comparison-grid">
-              {comparison.models.map((item) => (
-                <article
-                  className="forecast-comparison-card"
-                  key={item.model}
-                >
-                  <div className="forecast-comparison-card-top">
-                    <span>{item.model}</span>
-                    <CheckCircle2 size={16} />
-                  </div>
-
-                  <div className="forecast-comparison-values">
-                    <div>
-                      <span>MAE</span>
-                      <strong>{formatNumber(item.mae)}</strong>
-                    </div>
-
-                    <div>
-                      <span>RMSE</span>
-                      <strong>{formatNumber(item.rmse)}</strong>
-                    </div>
-
-                    <div>
-                      <span>QLIKE</span>
-                      <strong>{formatNumber(item.qlike)}</strong>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="surface forecast-comparison-empty">
-            <div className="forecast-empty-icon">
-              <Zap size={21} />
-            </div>
-
-            <div>
-              <h3>Comparison is research-backed</h3>
-              <p>
-                MAE, RMSE and QLIKE will appear here only when the
-                backend evaluation pipeline returns real comparison
-                results.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="forecast-integrity-panel">
-        <div className="forecast-integrity-icon">
-          <CheckCircle2 size={18} />
-        </div>
-
+    <main className="page forecasts-page">
+      <header className="module-header">
         <div>
-          <div className="forecast-integrity-label">
-            RESEARCH INTEGRITY
-          </div>
-
-          <h3>No fabricated forecast results</h3>
-
-          <p>
-            This interface displays registered forecast observations
-            and backend evaluation results only. It does not
-            generate synthetic metrics or infer model performance
-            when the research pipeline has not produced them.
-          </p>
+          <div className="page-eyebrow">OUT-OF-SAMPLE FORECAST EVALUATION</div>
+          <h1>Volatility forecasts</h1>
+          <p className="page-description">Generate, retrieve and evaluate forecasts using the registered experiment's dataset. The scope below is sent as-is to the backend; no wildcard assets or placeholder dates are used.</p>
         </div>
+      </header>
+
+      <section className="surface forecast-scope">
+        <div className="forecast-scope-heading"><div><span className="section-kicker">RESEARCH SCOPE</span><h2>Choose what to evaluate</h2></div><span className="forecast-scope-meta"><Database size={14} /> {datasets.length} registered datasets</span></div>
+        <div className="forecast-form-grid">
+          <label className="forecast-field"><span>Experiment</span><select value={experimentName} onChange={(event) => chooseExperiment(event.target.value)}><option value="">Select experiment</option>{experiments.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+          <label className="forecast-field"><span>Dataset</span><select value={datasetName} onChange={(event) => chooseDataset(event.target.value)}><option value="">Select dataset</option>{datasets.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+          <label className="forecast-field"><span>Model</span><select value={model} onChange={(event) => setModel(event.target.value)}>{MODELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label className="forecast-field"><span>Start date</span><input type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label>
+          <label className="forecast-field"><span>End date</span><input type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label>
+        </div>
+        <div className="forecast-assets">
+          <div className="forecast-assets-label"><span>Asset universe</span><small>{assets.length} of {availableAssets.length} selected</small></div>
+          {availableAssets.length ? <div className="forecast-asset-list">{availableAssets.map((asset) => <label key={asset} className={assets.includes(asset) ? "forecast-asset selected" : "forecast-asset"}><input type="checkbox" checked={assets.includes(asset)} onChange={(event) => setAssets((current) => event.target.checked ? [...current, asset] : current.filter((item) => item !== asset))} /><span>{asset}</span><Check size={13} /></label>)}</div> : <p className="forecast-scope-hint">Choose a dataset that contains registered asset identifiers. If this experiment has no dataset_name parameter, select its dataset manually.</p>}
+        </div>
+        <div className="forecast-action-row">
+          <button className="secondary-button" type="button" onClick={() => void perform("load")} disabled={busy !== null}><RefreshCw size={14} />Load saved forecast</button>
+          <button className="primary-button" type="button" onClick={() => void perform("run")} disabled={busy !== null}><Play size={14} />{busy === "run" ? "Generating…" : "Generate forecast"}</button>
+          <button className="secondary-button" type="button" onClick={() => void perform("evaluate")} disabled={busy !== null}><Activity size={14} />Evaluate</button>
+          <button className="secondary-button" type="button" onClick={() => void perform("compare")} disabled={busy !== null}><BarChart3 size={14} />Compare models</button>
+        </div>
+        {error && <div className="inline-alert" role="alert">{error}</div>}
+        {notice && <div className="forecast-notice" role="status">{notice}</div>}
+        {selectedExperiment && <p className="forecast-scope-hint">Experiment dataset binding: {String(selectedExperiment.parameters?.dataset_name ?? "not configured")}.</p>}
       </section>
 
-      {showQueryPanel && (
-        <div
-          className="forecast-modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setShowQueryPanel(false);
-            }
-          }}
-        >
-          <div className="forecast-query-modal">
-            <div className="forecast-modal-header">
-              <div>
-                <div className="page-eyebrow">
-                  FORECAST CONFIGURATION
-                </div>
-
-                <h2>Forecast view</h2>
-
-                <p>
-                  Select the registered experiment and model to
-                  inspect.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowQueryPanel(false)}
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="forecast-modal-body">
-              <label>
-                Experiment name
-
-                <input
-                  value={experimentName}
-                  onChange={(event) =>
-                    setExperimentName(event.target.value)
-                  }
-                  placeholder="e.g. AVF_TEST_001"
-                />
-              </label>
-
-              <label>
-                Model
-
-                <select
-                  value={model}
-                  onChange={(event) =>
-                    setModel(event.target.value)
-                  }
-                >
-                  {MODELS.map((item) => (
-                    <option key={item.key} value={item.key}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="forecast-model-description">
-                <Sparkles size={16} />
-
-                <div>
-                  <strong>
-                    {
-                      MODELS.find(
-                        (item) => item.key === model,
-                      )?.label
-                    }
-                  </strong>
-
-                  <span>
-                    {
-                      MODELS.find(
-                        (item) => item.key === model,
-                      )?.description
-                    }
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="forecast-modal-footer">
-              <button
-                className="button button-secondary"
-                type="button"
-                onClick={() => setShowQueryPanel(false)}
-              >
-                Cancel
-              </button>
-
-              <button
-                className="button button-primary"
-                type="button"
-                onClick={() => {
-                  setShowQueryPanel(false);
-                  void handleLoadForecast();
-                }}
-              >
-                <Play size={15} />
-                Load forecast
-              </button>
-            </div>
+      {forecast && (
+        <section className="forecast-output">
+          <div className="forecast-output-heading"><div><span className="section-kicker">BACKEND RESULT</span><h2>{forecast.model} · {forecast.dataset_name}</h2></div><span className="status-pill">{forecast.status}</span></div>
+          <div className="forecast-output-metrics">
+            <div><span>Observations</span><strong>{forecast.observation_count.toLocaleString()}</strong></div>
+            <div><span>Assets</span><strong>{forecast.asset_count.toLocaleString()}</strong></div>
+            <div><span>Model</span><strong>{forecast.model}</strong></div>
           </div>
-        </div>
+          {chartData.length > 0 ? <div className="forecast-chart-panel">
+            <div className="forecast-chart-title"><div><LineChart size={16} /><strong>Predicted vs actual volatility</strong></div><span>Target timestamp</span></div>
+            <div className="forecast-chart-container"><ResponsiveContainer width="100%" height="100%"><RechartsLineChart data={chartData} margin={{ top: 12, right: 18, bottom: 4, left: 4 }}><CartesianGrid strokeDasharray="2 5" stroke="var(--border)" /><XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 9 }} minTickGap={28} /><YAxis tick={{ fill: "var(--text-muted)", fontSize: 9 }} width={54} /><Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-primary)", fontSize: 11 }} /><Line type="monotone" dataKey="predicted" name="Predicted" stroke="#347c60" strokeWidth={2} dot={false} connectNulls /><Line type="monotone" dataKey="actual" name="Actual" stroke="#b47a45" strokeWidth={1.6} dot={false} connectNulls /></RechartsLineChart></ResponsiveContainer></div>
+          </div> : <p className="forecast-scope-hint">No forecast observations were returned.</p>}
+          <div className="table-wrap"><table className="data-table"><thead><tr><th>Target timestamp</th><th>Asset</th><th>Predicted volatility</th><th>Actual volatility</th></tr></thead><tbody>{forecast.forecasts.slice(0, 100).map((point, index) => <tr key={point.timestamp + point.asset_id + index}><td>{new Date(point.timestamp).toLocaleString()}</td><td>{point.asset_id}</td><td>{fmt(point.predicted_volatility)}</td><td>{fmt(point.actual_volatility)}</td></tr>)}</tbody></table></div>
+          {forecast.forecasts.length > 100 && <p className="forecast-scope-hint">Showing the first 100 of {forecast.forecasts.length.toLocaleString()} observations.</p>}
+        </section>
       )}
-    </div>
+
+      {evaluation && <section className="surface forecast-evaluation"><div className="forecast-output-heading"><div><span className="section-kicker">FORECAST METRICS</span><h2>Evaluation result</h2></div><strong>{evaluation.observation_count.toLocaleString()} observations</strong></div><div className="forecast-evaluation-grid">{evaluation.metrics.map((metric, index) => <div key={metric.model + metric.metric + index}><span>{metric.model} · {metric.metric}</span><strong>{fmt(metric.value, 6)}</strong></div>)}</div></section>}
+
+      {comparison && <section className="surface forecast-evaluation"><div className="forecast-output-heading"><div><span className="section-kicker">COMMON OUT-OF-SAMPLE COMPARISON</span><h2>Model comparison</h2></div><strong>{comparison.observation_count.toLocaleString()} observations</strong></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Model</th><th>MAE</th><th>RMSE</th><th>QLIKE</th></tr></thead><tbody>{comparison.models.map((item) => <tr key={item.model}><td>{item.model}</td><td>{fmt(item.mae, 6)}</td><td>{fmt(item.rmse, 6)}</td><td>{fmt(item.qlike, 6)}</td></tr>)}</tbody></table></div></section>}
+    </main>
   );
 }
