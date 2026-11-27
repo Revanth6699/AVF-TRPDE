@@ -89,6 +89,13 @@ def test_portfolio_and_stress_api_workflow(tmp_path, monkeypatch) -> None:
     assert result.performance["net_pnl"] is not None
     assert len(store.list_portfolios("exp-1")) == 1
 
+    buy_and_hold_request = request.model_copy(update={"strategy": "buy_and_hold"})
+    buy_and_hold_result = portfolios.create_portfolio_analysis(buy_and_hold_request)
+    assert buy_and_hold_result.status == "completed"
+    comparison = portfolios.compare_portfolios(request)
+    assert len(comparison.strategies) == 2
+    assert {item.model for item in comparison.strategies} == {"EWMA"}
+
     stress_result = stress.run_stress(
         StressRunRequest(experiment_name="exp-1", strategy="static")
     )
