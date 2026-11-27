@@ -44,7 +44,7 @@ class PortfolioResponse(BaseModel):
     experiment_name: str
     dataset_name: str
     strategy: str
-    model: str
+    model: str | None = None
 
     positions: list[PortfolioPosition]
     return_series: list[dict] = Field(default_factory=list)
