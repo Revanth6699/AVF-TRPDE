@@ -405,6 +405,13 @@ def _validate_input(
                 f"{column} must not contain negative values."
             )
 
+    observation_counts = pd.to_numeric(
+        results["observation_count"],
+        errors="coerce",
+    )
+    zero_observation_mask = observation_counts == 0
+    populated_mask = observation_counts > 0
+
     for column in (
         "total_return",
         "mean_return",
@@ -413,25 +420,20 @@ def _validate_input(
         "max_drawdown",
         "cumulative_return",
     ):
-        values = pd.to_numeric(
-            results[column],
-            errors="coerce",
-        )
-
-        if values.isna().any():
+        values = pd.to_numeric(results[column], errors="coerce")
+        populated_values = values.loc[populated_mask]
+        if populated_values.isna().any():
             raise StressAnalysisError(
-                f"{column} contains invalid or missing values."
+                f"{column} contains invalid or missing values for a populated scenario."
             )
-
-        if not np.isfinite(values.to_numpy()).all():
+        if not np.isfinite(populated_values.to_numpy(dtype=float)).all():
             raise StressAnalysisError(
-                f"{column} contains non-finite values."
+                f"{column} contains non-finite values for a populated scenario."
             )
-
-    observation_counts = pd.to_numeric(
-        results["observation_count"],
-        errors="coerce",
-    )
+        if values.loc[zero_observation_mask].notna().any():
+            raise StressAnalysisError(
+                f"{column} must be missing when observation_count is zero."
+            )
 
     asset_counts = pd.to_numeric(
         results["asset_count"],
