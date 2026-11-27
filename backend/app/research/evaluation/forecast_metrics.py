@@ -80,11 +80,14 @@ def calculate_qlike(
     """
     Calculate QLIKE loss for volatility forecasts.
 
-    QLIKE = mean(
-        actual / forecast
-        - log(actual / forecast)
-        - 1
-    )
+    QLIKE is calculated on variance, not standard deviation.
+    For volatility inputs, variance is volatility squared:
+
+        QLIKE = mean(
+            actual_variance / forecast_variance
+            - log(actual_variance / forecast_variance)
+            - 1
+        )
 
     Both actual and forecast volatility values must be
     strictly positive.
@@ -101,7 +104,9 @@ def calculate_qlike(
             "for QLIKE."
         )
 
-    ratio = actual_array / forecast_array
+    # The supplied series are standard deviations (volatility).
+    # Canonical QLIKE is defined on variance forecasts/proxies.
+    ratio = np.square(actual_array / forecast_array)
 
     qlike_values = (
         ratio
