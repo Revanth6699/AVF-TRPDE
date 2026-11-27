@@ -90,7 +90,7 @@ export default function Datasets() {
         name: dataset.name,
         source: dataset.source,
         frequency: dataset.frequency,
-        assets: [dataset.name],
+        assets: dataset.assets,
         start_timestamp: dataset.start_timestamp ?? "",
         end_timestamp: dataset.end_timestamp ?? "",
         row_count: dataset.row_count,
