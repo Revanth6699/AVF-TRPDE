@@ -77,6 +77,7 @@ class RiskBacktestResponse(BaseModel):
     results: list[RiskBacktestResult] = Field(default_factory=list)
     observation_count: int = Field(ge=0)
     asset_count: int = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class RiskComparisonItem(BaseModel):
