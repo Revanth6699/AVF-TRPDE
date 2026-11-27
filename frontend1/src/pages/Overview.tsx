@@ -1,27 +1,23 @@
-import {
-  ArrowRight, Activity, Database, FileText, FlaskConical,
-  LineChart, ShieldCheck, WalletCards, Workflow,
-} from "lucide-react";
+import { Activity, ArrowRight, Database, FileText, FlaskConical, LineChart, ShieldCheck, WalletCards, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getDatasets } from "../api/datasets";
 import { getExperiments } from "../api/experiments";
 import { getHealth } from "../api/system";
 
-type WorkspaceCounts = { datasets: number | null; experiments: number | null; api: "checking" | "online" | "offline" };
+type Counts = { datasets: number | null; experiments: number | null; api: "checking" | "online" | "offline" };
 
-const stages = [
-  { number: "01", title: "Register data", detail: "Define the market source, frequency, asset universe and date coverage.", path: "/datasets", icon: Database },
-  { number: "02", title: "Configure experiment", detail: "Choose the four supported forecasting models, metrics and walk-forward parameters.", path: "/experiments", icon: FlaskConical },
-  { number: "03", title: "Execute research", detail: "Run the registered configuration and persist out-of-sample predictions.", path: "/experiments", icon: Workflow },
-  { number: "04", title: "Evaluate forecasts", detail: "Inspect forecast trajectories, MAE, RMSE, QLIKE and model comparisons.", path: "/forecasts", icon: LineChart },
-  { number: "05", title: "Measure tail risk", detail: "Generate FHS VaR and ES estimates and run VaR coverage backtests.", path: "/risk", icon: ShieldCheck },
-  { number: "06", title: "Test portfolio", detail: "Construct portfolio strategies and evaluate constraints and transaction costs.", path: "/portfolios", icon: WalletCards },
-  { number: "07", title: "Stress & report", detail: "Run retrospective scenarios and assemble evidence-based research reports.", path: "/stress", icon: FileText },
+const workbenches = [
+  { id: "01", title: "Dataset registry", detail: "Register market histories, inspect coverage and establish the asset universe before modelling.", tag: "INPUT", path: "/datasets", icon: Database },
+  { id: "02", title: "Experiment design", detail: "Configure the model set, target, evaluation metrics and walk-forward validation window.", tag: "CONFIGURE", path: "/experiments", icon: FlaskConical },
+  { id: "03", title: "Volatility forecasts", detail: "Review out-of-sample predictions and compare EWMA, GJR-GARCH and machine-learning models.", tag: "FORECAST", path: "/forecasts", icon: LineChart },
+  { id: "04", title: "Tail-risk analysis", detail: "Inspect Value at Risk, Expected Shortfall estimates and available exception backtests.", tag: "RISK", path: "/risk", icon: ShieldCheck },
+  { id: "05", title: "Portfolio research", detail: "Compare portfolio strategies, risk targeting and transaction-cost effects.", tag: "ALLOCATE", path: "/portfolios", icon: WalletCards },
+  { id: "06", title: "Stress & reporting", detail: "Run historical stress scenarios and assemble reproducible research outputs.", tag: "OUTPUT", path: "/stress", icon: FileText },
 ];
 
 export default function Overview() {
-  const [counts, setCounts] = useState<WorkspaceCounts>({ datasets: null, experiments: null, api: "checking" });
+  const [counts, setCounts] = useState<Counts>({ datasets: null, experiments: null, api: "checking" });
 
   useEffect(() => {
     let active = true;
@@ -38,83 +34,68 @@ export default function Overview() {
 
   return (
     <main className="page overview-page">
-      <section className="overview-heading">
+      <header className="terminal-heading">
         <div>
-          <div className="page-eyebrow">QUANTITATIVE RESEARCH WORKSPACE</div>
-          <h1>From market data<br /><span>to defensible decisions.</span></h1>
-          <p>One chronological research pipeline for volatility forecasting, tail-risk measurement and portfolio analysis. Every result shown here comes from a backend operation—not a simulated dashboard metric.</p>
-          <div className="overview-heading-actions">
-            <Link to="/datasets" className="primary-button"><Database size={15} /> Start with a dataset <ArrowRight size={15} /></Link>
-            <Link to="/experiments" className="secondary-button">Open experiment register</Link>
-          </div>
+          <div className="terminal-meta">AVF / TRPDE &nbsp;·&nbsp; QUANTITATIVE RESEARCH SYSTEM</div>
+          <h1>Market evidence.<br /><span>Measured risk. Better decisions.</span></h1>
+          <p>A research environment for adaptive volatility forecasting, tail-risk measurement and portfolio evaluation. The workspace reports persisted backend results; it does not manufacture sample performance figures.</p>
         </div>
-        <div className="research-visual" aria-label="Abstract three-dimensional market volatility plot">
-          <div className="visual-axis visual-axis-x" />
-          <div className="visual-axis visual-axis-y" />
-          <div className="visual-axis visual-axis-z" />
-          <div className="visual-plane">
-            <div className="visual-grid" />
-            <div className="visual-ribbon ribbon-back" />
-            <div className="visual-ribbon ribbon-front" />
-            <span className="visual-point point-a" />
-            <span className="visual-point point-b" />
-            <span className="visual-point point-c" />
-          </div>
-          <div className="visual-caption"><span>VOLATILITY SURFACE</span><strong>WALK-FORWARD · OUT-OF-SAMPLE</strong></div>
-          <span className="visual-coordinate coordinate-one">σ(t)</span>
-          <span className="visual-coordinate coordinate-two">t + 1</span>
+        <div className="terminal-heading-actions">
+          <Link to="/datasets" className="terminal-button primary"><Database size={14} /> Add dataset</Link>
+          <Link to="/experiments" className="terminal-button"><FlaskConical size={14} /> New experiment</Link>
         </div>
-      </section>
+      </header>
 
-      <section className="overview-status-row" aria-label="Workspace status">
-        <article className="overview-status-card">
-          <span className="overview-status-label">Backend API</span>
-          <strong className={`overview-status-value status-${counts.api}`}>{counts.api === "checking" ? "Checking" : counts.api === "online" ? "Connected" : "Unavailable"}</strong>
-          <span className="overview-status-note">Live /health response</span>
+      <section className="terminal-kpis" aria-label="Live workspace status">
+        <article className="terminal-kpi">
+          <span className="terminal-kpi-label">API service</span>
+          <strong className={`terminal-kpi-value ${counts.api === "online" ? "terminal-state-online" : counts.api === "offline" ? "terminal-state-offline" : ""}`}>{counts.api === "checking" ? "Checking" : counts.api === "online" ? "Online" : "Offline"}</strong>
+          <span className="terminal-kpi-note">Live health endpoint</span>
         </article>
-        <article className="overview-status-card">
-          <span className="overview-status-label">Registered datasets</span>
-          <strong>{counts.datasets === null ? "—" : counts.datasets.toLocaleString()}</strong>
-          <span className="overview-status-note">Persisted dataset definitions</span>
+        <article className="terminal-kpi">
+          <span className="terminal-kpi-label">Registered datasets</span>
+          <strong className="terminal-kpi-value">{counts.datasets === null ? "—" : counts.datasets.toLocaleString()}</strong>
+          <span className="terminal-kpi-note">Dataset definitions in registry</span>
         </article>
-        <article className="overview-status-card">
-          <span className="overview-status-label">Experiments</span>
-          <strong>{counts.experiments === null ? "—" : counts.experiments.toLocaleString()}</strong>
-          <span className="overview-status-note">Saved research configurations</span>
+        <article className="terminal-kpi">
+          <span className="terminal-kpi-label">Experiments</span>
+          <strong className="terminal-kpi-value">{counts.experiments === null ? "—" : counts.experiments.toLocaleString()}</strong>
+          <span className="terminal-kpi-note">Saved research configurations</span>
         </article>
-        <article className="overview-status-card">
-          <span className="overview-status-label">Model suite</span>
-          <strong>04</strong>
-          <span className="overview-status-note">EWMA · GJR-GARCH · XGBoost · Regime-XGBoost</span>
+        <article className="terminal-kpi">
+          <span className="terminal-kpi-label">Forecast models</span>
+          <strong className="terminal-kpi-value">04</strong>
+          <span className="terminal-kpi-note">EWMA · GJR-GARCH · XGBoost · Regime-XGBoost</span>
         </article>
       </section>
 
-      <section className="overview-workflow-section">
-        <div className="overview-section-heading">
-          <div><span className="section-kicker">THE RESEARCH SEQUENCE</span><h2>Work from the root</h2></div>
-          <span className="section-context">DATA → MODEL → VALIDATION → DECISION</span>
+      <section>
+        <div className="terminal-section-head">
+          <div><div className="section-kicker">RESEARCH WORKBENCH</div><h2>Choose an analysis module</h2></div>
+          <p>INPUT → MODEL → VALIDATION → DECISION</p>
         </div>
-        <div className="workflow-list">
-          {stages.map((stage, index) => {
-            const Icon = stage.icon;
+        <div className="terminal-workbench">
+          {workbenches.map((item) => {
+            const Icon = item.icon;
             return (
-              <Link to={stage.path} className="workflow-stage" key={stage.number}>
-                <span className="workflow-stage-number">{stage.number}</span>
-                <span className="workflow-stage-icon"><Icon size={18} strokeWidth={1.8} /></span>
-                <span className="workflow-stage-copy"><strong>{stage.title}</strong><small>{stage.detail}</small></span>
-                <ArrowRight className="workflow-stage-arrow" size={17} />
-                {index < stages.length - 1 && <span className="workflow-stage-connector" />}
+              <Link to={item.path} className="terminal-workbench-row" key={item.id}>
+                <span className="terminal-index">{item.id}</span>
+                <span className="terminal-workbench-title">{item.title}</span>
+                <span className="terminal-workbench-detail">{item.detail}</span>
+                <span className="terminal-workbench-tag">{item.tag}</span>
+                <ArrowRight className="terminal-arrow" size={15} />
+                <span className="sr-only"><Icon size={1} /></span>
               </Link>
             );
           })}
         </div>
       </section>
 
-      <section className="overview-research-note">
-        <div className="research-note-icon"><Activity size={18} /></div>
-        <div><strong>Interpretation matters as much as execution.</strong><p>Backtest statistics depend on sample size; 99% VaR exceptions are sparse in short samples. The current real-market validation is BTCUSD-only, and Expected Shortfall does not yet have a separate statistical backtest.</p></div>
-        <Link to="/reports" aria-label="Open research reports"><ArrowRight size={17} /></Link>
-      </section>
+      <aside className="terminal-footnote">
+        <Activity size={17} />
+        <div><strong>Research integrity note</strong><p>Forecast and risk statistics are only meaningful with sufficient observations and correctly aligned daily/intraday data. Current validation limitations must remain visible in any report; no placeholder metrics are presented as empirical results.</p></div>
+        <Link to="/reports" aria-label="Open research reports"><ArrowRight size={16} /></Link>
+      </aside>
     </main>
   );
 }
