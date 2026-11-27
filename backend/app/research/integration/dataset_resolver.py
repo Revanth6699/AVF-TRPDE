@@ -328,7 +328,7 @@ def prepare_research_dataset(
 
     numeric_columns = [
         "open", "high", "low", "close", "volume", "return",
-        "realized_variance", "realized_volatility", "target",
+        "realized_variance", "realized_volatility", "target", "target_return",
     ]
     result = daily.dropna(subset=numeric_columns + ["target_timestamp"]).copy()
     if result.empty:
