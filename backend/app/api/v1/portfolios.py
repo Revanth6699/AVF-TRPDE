@@ -189,6 +189,11 @@ def compare_portfolios(request: PortfolioRequest) -> PortfolioComparisonResponse
     items = []
     for strategy, frame in frames.items():
         aligned = frame.loc[common_dates].sort_index()
+        if aligned["forecast_model"].nunique() != 1:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Portfolio '{strategy}' mixes forecast models and cannot be compared as one strategy.",
+            )
         returns = aligned["net_return"].astype(float)
         wealth = float((1.0 + returns).prod())
         losses = -returns.to_numpy(dtype=float)
