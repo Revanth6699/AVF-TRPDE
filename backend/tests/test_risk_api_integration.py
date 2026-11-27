@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 import backend.app.api.v1.risk as risk_api
 from backend.app.schemas.risk import RiskRequest
+from backend.app.storage import DuckDBStorage
 
 
 def _forecast_artifact(rows: int = 105) -> pd.DataFrame:
@@ -134,3 +135,43 @@ def test_risk_api_rejects_legacy_forecast_artifacts_without_next_day_returns(mon
         risk_api.create_risk_analysis(_request("A0"))
     assert error.value.status_code == 422
     assert "risk-alignment columns" in error.value.detail
+
+
+
+def test_risk_storage_upsert_replaces_existing_model_result(tmp_path) -> None:
+    repository = DuckDBStorage(tmp_path / "risk-test.duckdb")
+    original = {
+        "experiment_name": "risk-storage",
+        "dataset_name": "fixture",
+        "model": "A0",
+        "risk_points": [],
+        "observation_count": 0,
+        "asset_count": 1,
+        "status": "accepted",
+    }
+    repository.save_risk(original)
+
+    completed = {
+        **original,
+        "risk_points": [
+            {
+                "timestamp": "2024-01-02T00:00:00",
+                "asset_id": "AAA",
+                "var_95": 0.02,
+                "var_99": 0.03,
+                "es_95": 0.025,
+                "actual_return": -0.01,
+                "forecast_volatility": 0.01,
+                "history_count": 100,
+            }
+        ],
+        "observation_count": 1,
+        "status": "completed",
+    }
+    repository.upsert_risk(completed)
+
+    stored = repository.get_risk("risk-storage", "A0")
+    assert stored is not None
+    assert stored["status"] == "completed"
+    assert stored["observation_count"] == 1
+    assert stored["risk_points"][0]["actual_return"] == -0.01
