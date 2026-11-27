@@ -153,6 +153,33 @@ class DuckDBStorage:
 
                 connection.execute(
                     """
+                    ALTER TABLE portfolio_results
+                    ADD COLUMN IF NOT EXISTS return_series VARCHAR DEFAULT '[]'
+                    """
+                )
+                connection.execute(
+                    """
+                    ALTER TABLE portfolio_results
+                    ADD COLUMN IF NOT EXISTS performance VARCHAR DEFAULT '{}'
+                    """
+                )
+
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS stress_results (
+                        experiment_name VARCHAR NOT NULL,
+                        strategy VARCHAR NOT NULL,
+                        results VARCHAR NOT NULL,
+                        summary VARCHAR NOT NULL,
+                        status VARCHAR NOT NULL,
+                        created_at VARCHAR NOT NULL,
+                        PRIMARY KEY (experiment_name, strategy)
+                    )
+                    """
+                )
+
+                connection.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS reports (
                         experiment_name VARCHAR NOT NULL,
                         dataset_name VARCHAR NOT NULL,
@@ -813,21 +840,15 @@ class DuckDBStorage:
     ) -> None:
         with self._write_lock:
             connection = self._connect()
-
             try:
                 connection.execute(
                     """
                     INSERT INTO portfolio_results (
-                        experiment_name,
-                        dataset_name,
-                        strategy,
-                        positions,
-                        observation_count,
-                        asset_count,
-                        status,
-                        created_at
+                        experiment_name, dataset_name, strategy, positions,
+                        observation_count, asset_count, status, created_at,
+                        return_series, performance
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         record["experiment_name"],
@@ -838,6 +859,8 @@ class DuckDBStorage:
                         record["asset_count"],
                         record["status"],
                         self._timestamp(),
+                        self._json_dump(record.get("return_series", [])),
+                        self._json_dump(record.get("performance", {})),
                     ],
                 )
             except duckdb.ConstraintException as exc:
@@ -855,28 +878,19 @@ class DuckDBStorage:
         strategy: str,
     ) -> dict[str, Any] | None:
         connection = self._connect()
-
         try:
             row = connection.execute(
                 """
-                SELECT
-                    experiment_name,
-                    dataset_name,
-                    strategy,
-                    positions,
-                    observation_count,
-                    asset_count,
-                    status
+                SELECT experiment_name, dataset_name, strategy, positions,
+                       observation_count, asset_count, status,
+                       return_series, performance
                 FROM portfolio_results
-                WHERE experiment_name = ?
-                  AND strategy = ?
+                WHERE experiment_name = ? AND strategy = ?
                 """,
                 [experiment_name, strategy],
             ).fetchone()
-
             if row is None:
                 return None
-
             return {
                 "experiment_name": row[0],
                 "dataset_name": row[1],
@@ -885,6 +899,8 @@ class DuckDBStorage:
                 "observation_count": row[4],
                 "asset_count": row[5],
                 "status": row[6],
+                "return_series": self._json_load(row[7]),
+                "performance": self._json_load(row[8]),
             }
         finally:
             connection.close()
@@ -894,41 +910,19 @@ class DuckDBStorage:
         experiment_name: str | None = None,
     ) -> list[dict[str, Any]]:
         connection = self._connect()
-
         try:
-            if experiment_name is None:
-                rows = connection.execute(
-                    """
-                    SELECT
-                        experiment_name,
-                        dataset_name,
-                        strategy,
-                        positions,
-                        observation_count,
-                        asset_count,
-                        status
-                    FROM portfolio_results
-                    ORDER BY created_at
-                    """
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT
-                        experiment_name,
-                        dataset_name,
-                        strategy,
-                        positions,
-                        observation_count,
-                        asset_count,
-                        status
-                    FROM portfolio_results
-                    WHERE experiment_name = ?
-                    ORDER BY created_at
-                    """,
-                    [experiment_name],
-                ).fetchall()
-
+            query = """
+                SELECT experiment_name, dataset_name, strategy, positions,
+                       observation_count, asset_count, status,
+                       return_series, performance
+                FROM portfolio_results
+            """
+            parameters: list[Any] = []
+            if experiment_name is not None:
+                query += " WHERE experiment_name = ?"
+                parameters.append(experiment_name)
+            query += " ORDER BY created_at"
+            rows = connection.execute(query, parameters).fetchall()
             return [
                 {
                     "experiment_name": row[0],
@@ -938,6 +932,87 @@ class DuckDBStorage:
                     "observation_count": row[4],
                     "asset_count": row[5],
                     "status": row[6],
+                    "return_series": self._json_load(row[7]),
+                    "performance": self._json_load(row[8]),
+                }
+                for row in rows
+            ]
+        finally:
+            connection.close()
+
+    def save_stress_result(self, record: dict[str, Any]) -> None:
+        with self._write_lock:
+            connection = self._connect()
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO stress_results (
+                        experiment_name, strategy, results, summary, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        record["experiment_name"],
+                        record["strategy"],
+                        self._json_dump(record["results"]),
+                        self._json_dump(record["summary"]),
+                        record.get("status", "completed"),
+                        self._timestamp(),
+                    ],
+                )
+            except duckdb.ConstraintException as exc:
+                raise RecordExistsError(
+                    f"Stress result for '{record['experiment_name']}' "
+                    f"and strategy '{record['strategy']}' already exists."
+                ) from exc
+            finally:
+                connection.close()
+
+    def get_stress_result(
+        self, experiment_name: str, strategy: str
+    ) -> dict[str, Any] | None:
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT experiment_name, strategy, results, summary, status
+                FROM stress_results WHERE experiment_name = ? AND strategy = ?
+                """,
+                [experiment_name, strategy],
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "experiment_name": row[0],
+                "strategy": row[1],
+                "results": self._json_load(row[2]),
+                "summary": self._json_load(row[3]),
+                "status": row[4],
+            }
+        finally:
+            connection.close()
+
+    def list_stress_results(
+        self, experiment_name: str | None = None
+    ) -> list[dict[str, Any]]:
+        connection = self._connect()
+        try:
+            query = """
+                SELECT experiment_name, strategy, results, summary, status
+                FROM stress_results
+            """
+            parameters: list[Any] = []
+            if experiment_name is not None:
+                query += " WHERE experiment_name = ?"
+                parameters.append(experiment_name)
+            query += " ORDER BY created_at"
+            rows = connection.execute(query, parameters).fetchall()
+            return [
+                {
+                    "experiment_name": row[0],
+                    "strategy": row[1],
+                    "results": self._json_load(row[2]),
+                    "summary": self._json_load(row[3]),
+                    "status": row[4],
                 }
                 for row in rows
             ]
