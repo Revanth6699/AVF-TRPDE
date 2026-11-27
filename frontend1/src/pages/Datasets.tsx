@@ -91,10 +91,6 @@ export default function Datasets() {
         source: dataset.source,
         frequency: dataset.frequency,
         assets: dataset.assets,
-        start_timestamp: dataset.start_timestamp ?? "",
-        end_timestamp: dataset.end_timestamp ?? "",
-        row_count: dataset.row_count,
-        fingerprint: dataset.fingerprint,
       });
       setValidation((current) => ({
         ...current,
