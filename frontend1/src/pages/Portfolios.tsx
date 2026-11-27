@@ -529,37 +529,6 @@ export default function Portfolios() {
         </aside>
       </section>
 
-      <section className="portfolio-research-section">
-        <div className="research-section-header">
-          <div>
-            <div className="section-kicker">PORTFOLIO EVALUATION</div>
-            <h2>Performance comparison</h2>
-            <p>
-              Compare portfolio strategies only when the backend research
-              pipeline returns actual comparison results.
-            </p>
-          </div>
-
-          <button className="secondary-button" type="button">
-            <BarChart3 size={16} />
-            Compare strategies
-          </button>
-        </div>
-
-        <div className="research-placeholder">
-          <BarChart3 size={22} />
-
-          <div>
-            <strong>Comparison is research-backed</strong>
-            <p>
-              Total return, volatility, Sharpe, Sortino, drawdown, VaR, ES,
-              turnover and transaction-cost metrics will appear here only when
-              produced by the portfolio comparison pipeline.
-            </p>
-          </div>
-        </div>
-      </section>
-
       {isModalOpen && (
         <div
           className="modal-backdrop"
@@ -804,9 +773,6 @@ export default function Portfolios() {
                   Cancel
                 </button>
 
-                <button className="secondary-button" type="button" onClick={handleCompareStrategies} disabled={loading || comparing}>
-                  <BarChart3 size={15} />{comparing ? "Comparing…" : "Compare strategies"}
-                </button>
                 <button className="secondary-button" type="button" onClick={handleCompareStrategies} disabled={loading || comparing}>
                   <BarChart3 size={15} />{comparing ? "Comparing…" : "Compare strategies"}
                 </button>
