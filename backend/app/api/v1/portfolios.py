@@ -48,6 +48,7 @@ def _response(record: dict) -> PortfolioResponse:
         experiment_name=record["experiment_name"],
         dataset_name=record["dataset_name"],
         strategy=record["strategy"],
+        model=(record.get("return_series") or [{}])[0].get("forecast_model"),
         positions=record["positions"],
         return_series=record.get("return_series", []),
         performance=record.get("performance", {}),
@@ -124,7 +125,7 @@ def create_portfolio_analysis(request: PortfolioRequest) -> PortfolioResponse:
         "dataset_name": request.dataset_name,
         "strategy": request.strategy,
         "positions": execution.positions.to_dict(orient="records"),
-        "return_series": execution.returns.to_dict(orient="records"),
+        "return_series": execution.returns.assign(forecast_model=request.model).to_dict(orient="records"),
         "performance": execution.metrics,
         "observation_count": execution.observation_count,
         "asset_count": execution.asset_count,
@@ -170,7 +171,7 @@ def compare_portfolios(request: PortfolioRequest) -> PortfolioComparisonResponse
     frames: dict[str, pd.DataFrame] = {}
     for record in records:
         series = pd.DataFrame(record.get("return_series", []))
-        if series.empty or not {"timestamp", "net_return", "gross_return"} <= set(series.columns):
+        if series.empty or not {"timestamp", "net_return", "gross_return", "forecast_model"} <= set(series.columns):
             continue
         series["timestamp"] = pd.to_datetime(series["timestamp"], errors="coerce")
         series = series.loc[series["timestamp"].between(
@@ -199,6 +200,7 @@ def compare_portfolios(request: PortfolioRequest) -> PortfolioComparisonResponse
         items.append(
             PortfolioComparisonItem(
                 strategy=strategy,
+                model=str(aligned["forecast_model"].iloc[0]),
                 total_return=performance.total_return,
                 volatility=performance.annualized_volatility,
                 sharpe=performance.sharpe_ratio,
