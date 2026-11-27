@@ -216,7 +216,7 @@ Create the experiment with `POST /experiments`:
   "description": "Walk-forward A0-A3 ablation comparison",
   "models": ["XGBoost"],
   "metrics": ["MAE", "RMSE", "QLIKE"],
-  "risk_measures": [],
+  "risk_measures": ["VaR95", "VaR99", "ES95"],
   "parameters": {
     "dataset_name": "YOUR_REGISTERED_DATASET",
     "ablations": ["A0", "A1", "A2", "A3"],
@@ -238,7 +238,7 @@ Then execute it with `POST /experiments/run`:
 }
 ```
 
-The response contains executed ablations, fold and prediction counts, per-asset forecast metrics, pairwise DM results, confidence intervals, and MCS output when enough common out-of-sample observations are available. The MCS calculation is not run when fewer than 10 common observations are available; the response reports that limitation rather than inventing a result. QLIKE is calculated on variance: the API receives volatility standard deviations and squares their ratio when computing the loss.
+The response contains executed ablations, fold and prediction counts, per-asset forecast metrics, pairwise DM results, confidence intervals, and MCS output when enough common out-of-sample observations are available. Configured risk measures are returned under `risk_measures_requested`; `risk_analysis.status` is explicitly `not_implemented` until VaR/ES estimation and backtesting are connected. The MCS calculation is not run when fewer than 10 common observations are available; the response reports that limitation rather than inventing a result. QLIKE is calculated on variance: the API receives volatility standard deviations and squares their ratio when computing the loss.
 
 This workflow does not execute VaR/ES backtesting or portfolio analysis. Those remain separate backend work.
 ## Research Interpretation
