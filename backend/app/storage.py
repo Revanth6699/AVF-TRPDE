@@ -1063,6 +1063,30 @@ class DuckDBStorage:
             finally:
                 connection.close()
 
+    def upsert_report(self, record: dict[str, Any]) -> None:
+        with self._write_lock:
+            connection = self._connect()
+            try:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO reports (
+                        experiment_name, dataset_name, report_type,
+                        generated_at, sections, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        record["experiment_name"],
+                        record["dataset_name"],
+                        record["report_type"],
+                        str(record["generated_at"]),
+                        self._json_dump(record["sections"]),
+                        record["status"],
+                        self._timestamp(),
+                    ],
+                )
+            finally:
+                connection.close()
+
     def get_report(
         self,
         experiment_name: str,
