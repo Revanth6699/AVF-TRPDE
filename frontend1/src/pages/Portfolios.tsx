@@ -86,7 +86,7 @@ export default function Portfolios() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selected, setSelected] = useState<PortfolioRecord | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState("");\n  const [comparison, setComparison] = useState<PortfolioComparisonResponse | null>(null);\n  const [comparing, setComparing] = useState(false);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -758,6 +758,9 @@ export default function Portfolios() {
                   Cancel
                 </button>
 
+                <button className="secondary-button" type="button" onClick={handleCompareStrategies} disabled={loading || comparing}>
+                  <BarChart3 size={15} />{comparing ? "Comparing…" : "Compare strategies"}
+                </button>
                 <button
                   className="primary-button"
                   type="submit"
