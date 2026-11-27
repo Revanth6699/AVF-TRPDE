@@ -138,6 +138,22 @@ def main():
     })
     (OUT / "risk.json").write_text(json.dumps(risk, indent=2), encoding="utf-8")
     pd.DataFrame(risk["risk_points"]).to_csv(OUT / "risk_points_ewma.csv", index=False)
+    # Persist formal out-of-sample VaR coverage and independence tests.
+    # The risk API generates the FHS VaR/ES series; this endpoint evaluates
+    # realized returns against the stored VaR thresholds using Kupiec and
+    # Christoffersen tests. Expected Shortfall is reported as a risk estimate,
+    # not described as statistically backtested here.
+    risk_backtest = call(client, "/risk/backtest", {
+        "experiment_name": experiment_name, "dataset_name": dataset_name, "model": "EWMA",
+        "assets": ["BTCUSD"], "confidence_levels": [0.95, 0.99],
+        "start_timestamp": start_iso, "end_timestamp": end_iso
+    })
+    (OUT / "risk_backtest.json").write_text(
+        json.dumps(risk_backtest, indent=2), encoding="utf-8"
+    )
+    pd.DataFrame(risk_backtest["results"]).to_csv(
+        OUT / "risk_backtest_ewma.csv", index=False
+    )
     portfolio = call(client, "/portfolios", {
         "experiment_name": experiment_name, "dataset_name": dataset_name, "strategy": "static", "model": "EWMA",
         "assets": ["BTCUSD"], "start_timestamp": start_iso, "end_timestamp": end_iso,
@@ -158,7 +174,11 @@ def main():
     summary = {
         "status": "completed", "dataset": manifest, "experiment": experiment,
         "forecast_observations_by_model": {k: v["observation_count"] for k, v in forecasts.items()},
-        "risk_observations": risk["observation_count"], "portfolio_observations": portfolio["observation_count"],
+        "risk_observations": risk["observation_count"],
+        "risk_backtest_observations": risk_backtest["observation_count"],
+        "risk_backtest_results": risk_backtest["results"],
+        "risk_backtest_warnings": risk_backtest["warnings"],
+        "portfolio_observations": portfolio["observation_count"],
         "portfolio_performance": portfolio["performance"], "stress_scenario_count": stress["scenario_count"],
         "stress_summary": stress["summary"], "report": report,
         "caveats": [
@@ -172,7 +192,11 @@ def main():
         "status": "completed", "daily_rows": len(daily), "hourly_rows": len(hourly),
         "date_start": start_iso, "date_end": end_iso,
         "forecast_observations": summary["forecast_observations_by_model"],
-        "risk_observations": risk["observation_count"], "portfolio_observations": portfolio["observation_count"],
+        "risk_observations": risk["observation_count"],
+        "risk_backtest_observations": risk_backtest["observation_count"],
+        "risk_backtest_result_count": len(risk_backtest["results"]),
+        "risk_backtest_warnings": risk_backtest["warnings"],
+        "portfolio_observations": portfolio["observation_count"],
         "stress_scenario_count": stress["scenario_count"], "portfolio_performance": portfolio["performance"]
     }, indent=2, default=str))
 
