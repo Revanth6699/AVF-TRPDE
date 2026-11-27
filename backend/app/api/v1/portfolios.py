@@ -151,8 +151,13 @@ def get_portfolio_analysis(
 @router.post("/compare", response_model=PortfolioComparisonResponse)
 def compare_portfolios(request: PortfolioRequest) -> PortfolioComparisonResponse:
     """Compare persisted portfolio return series on their common dates."""
-    _, _, _ = _validate_request(request)
-    records = storage.list_portfolios(request.experiment_name)
+    _, _, requested_assets = _validate_request(request)
+    records = [
+        record for record in storage.list_portfolios(request.experiment_name)
+        if record["dataset_name"] == request.dataset_name
+        and {str(position.get("asset_id", "")).strip().upper() for position in record.get("positions", [])}
+        == set(requested_assets)
+    ]
     if not records:
         raise HTTPException(status_code=404, detail="No completed portfolio analyses were found.")
     frames: dict[str, pd.DataFrame] = {}
