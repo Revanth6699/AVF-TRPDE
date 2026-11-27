@@ -330,10 +330,9 @@ export default function Experiments() {
 
     if (
       !form.name.trim() ||
-      !form.description.trim() ||
+      !datasetName.trim() ||
       form.models.length === 0 ||
-      form.metrics.length === 0 ||
-      form.risk_measures.length === 0
+      form.metrics.length === 0
     ) {
       setCreateError(
         "Choose a registered dataset, provide a name, and select at least one model and metric.",
