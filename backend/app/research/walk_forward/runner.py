@@ -578,30 +578,29 @@ class WalkForwardRunner:
             if test_asset.empty:
                 continue
 
-            model = EWMAVolatility(
-                decay=decay,
-            )
+            history = pd.to_numeric(
+                train_asset["return"],
+                errors="coerce",
+            ).astype(float).tolist()
 
-            model.fit(
-                pd.to_numeric(
-                    train_asset["return"],
-                    errors="coerce",
-                )
-            )
-
-            forecast = model.forecast_volatility
-
-            for _, row in test_asset.iterrows():
+            # The row at t contains the close-to-close return for day t.
+            # It is observable at the forecast origin and must be included
+            # when forecasting the target RV at t+1.
+            for _, row in test_asset.sort_values("timestamp").iterrows():
+                current_return = float(row["return"])
+                if not np.isfinite(current_return):
+                    raise WalkForwardRunnerError(
+                        f"Fold {fold.fold_id} EWMA received a non-finite test return."
+                    )
+                history.append(current_return)
+                model = EWMAVolatility(decay=decay)
+                model.fit(pd.Series(history, dtype=float))
                 rows.append(
                     {
-                        "timestamp": row[
-                            "timestamp"
-                        ],
+                        "timestamp": row["timestamp"],
                         "asset_id": asset_id,
-                        "prediction": forecast,
-                        "actual_volatility": float(
-                            row["target"]
-                        ),
+                        "prediction": model.forecast_volatility,
+                        "actual_volatility": float(row["target"]),
                     }
                 )
 
@@ -660,28 +659,28 @@ class WalkForwardRunner:
             if test_asset.empty:
                 continue
 
-            model = GJRGARCH()
+            history = pd.to_numeric(
+                train_asset["return"],
+                errors="coerce",
+            ).astype(float).tolist()
 
-            model.fit(
-                pd.to_numeric(
-                    train_asset["return"],
-                    errors="coerce",
-                )
-            )
-
-            forecast = model.forecast_volatility()
-
-            for _, row in test_asset.iterrows():
+            # Re-estimate through the observed close at t before producing
+            # the one-step-ahead forecast for target volatility at t+1.
+            for _, row in test_asset.sort_values("timestamp").iterrows():
+                current_return = float(row["return"])
+                if not np.isfinite(current_return):
+                    raise WalkForwardRunnerError(
+                        f"Fold {fold.fold_id} GJR-GARCH received a non-finite test return."
+                    )
+                history.append(current_return)
+                model = GJRGARCH()
+                model.fit(pd.Series(history, dtype=float))
                 rows.append(
                     {
-                        "timestamp": row[
-                            "timestamp"
-                        ],
+                        "timestamp": row["timestamp"],
                         "asset_id": asset_id,
-                        "prediction": forecast,
-                        "actual_volatility": float(
-                            row["target"]
-                        ),
+                        "prediction": model.forecast_volatility(),
+                        "actual_volatility": float(row["target"]),
                     }
                 )
 
@@ -918,14 +917,27 @@ class WalkForwardRunner:
                 "garch_forecast",
             ] = conditional_volatility
 
-            forecast = (
-                model.forecast_volatility()
-            )
+            history = pd.to_numeric(
+                train_asset["return"],
+                errors="coerce",
+            ).astype(float).tolist()
 
-            test_result.loc[
-                test_asset.index,
-                "garch_forecast",
-            ] = forecast
+            # Use each observed test-day return only for that day's
+            # next-day GARCH forecast. Training conditional-volatility
+            # features above remain estimated from the training fold only.
+            for test_index, test_row in test_asset.sort_values("timestamp").iterrows():
+                current_return = float(test_row["return"])
+                if not np.isfinite(current_return):
+                    raise WalkForwardRunnerError(
+                        f"Fold {fold.fold_id} GARCH received a non-finite test return."
+                    )
+                forecast_model = GJRGARCH()
+                forecast_model.fit(pd.Series(history + [current_return], dtype=float))
+                test_result.loc[
+                    test_index,
+                    "garch_forecast",
+                ] = forecast_model.forecast_volatility()
+                history.append(current_return)
 
         if (
             train_result["garch_forecast"]
