@@ -57,7 +57,7 @@ class PortfolioMetric(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metric: str = Field(min_length=1)
-    value: float
+    value: float | None
 
 
 class PortfolioEvaluationResponse(BaseModel):
@@ -83,10 +83,10 @@ class PortfolioComparisonItem(BaseModel):
 
     total_return: float
     volatility: float = Field(ge=0.0)
-    sharpe: float
-    sortino: float
+    sharpe: float | None
+    sortino: float | None
     max_drawdown: float
-    calmar: float
+    calmar: float | None
 
     var_95: float
     var_99: float
