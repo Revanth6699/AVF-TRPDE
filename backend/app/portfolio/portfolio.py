@@ -102,6 +102,7 @@ def calculate_portfolio_returns(
     returns_df["asset_id"] = (
         returns_df["asset_id"]
         .astype("string")
+        .str.strip()
         .str.upper()
     )
 
@@ -193,9 +194,10 @@ def create_static_weights(
     weights: dict[str, float],
 ) -> pd.DataFrame:
     """
-    Create constant portfolio weights for all timestamps.
+    Create constant-mix weights for all timestamps.
 
-    This represents the static / buy-and-hold portfolio framework.
+    These weights imply rebalancing back to the supplied proportions
+    at every timestamp. They are not a buy-and-hold weight path.
     """
 
     _validate_returns(returns)
@@ -244,6 +246,14 @@ def create_static_weights(
         subset=["timestamp", "asset_id"],
     )
 
+    available_assets = set(base["asset_id"].astype(str))
+    unknown_assets = sorted(set(normalized_weights) - available_assets)
+    if unknown_assets:
+        raise PortfolioError(
+            "Weights reference assets absent from returns: "
+            + ", ".join(unknown_assets)
+        )
+
     base["weight"] = (
         base["asset_id"]
         .map(normalized_weights)
@@ -253,6 +263,99 @@ def create_static_weights(
     return base.sort_values(
         by=["timestamp", "asset_id"],
         ascending=True,
+    ).reset_index(drop=True)
+
+
+def create_buy_and_hold_weights(
+    returns: pd.DataFrame,
+    initial_weights: dict[str, float],
+) -> pd.DataFrame:
+    """
+    Create a true buy-and-hold weight path.
+
+    Initial weights must be long-only and sum to one. After each return
+    observation, holdings drift with asset returns; no rebalancing occurs.
+    Returned weights are the pre-return weights applied at each timestamp.
+    """
+    _validate_returns(returns)
+    if not initial_weights:
+        raise PortfolioError("initial_weights must contain at least one asset.")
+
+    frame = returns.loc[:, list(REQUIRED_RETURN_COLUMNS)].copy()
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    frame["asset_id"] = (
+        frame["asset_id"].astype("string").str.strip().str.upper()
+    )
+    frame["return"] = pd.to_numeric(frame["return"], errors="coerce")
+
+    normalized: dict[str, float] = {}
+    for asset_id, raw_weight in initial_weights.items():
+        asset = str(asset_id).strip().upper()
+        if not asset or asset in normalized:
+            raise PortfolioError("Initial asset identifiers must be unique and non-empty.")
+        weight = float(raw_weight)
+        if not np.isfinite(weight) or weight < 0.0:
+            raise PortfolioError("Buy-and-hold initial weights must be finite and non-negative.")
+        normalized[asset] = weight
+
+    if not np.isclose(sum(normalized.values()), 1.0, rtol=0.0, atol=1e-10):
+        raise PortfolioError("Buy-and-hold initial weights must sum to one.")
+
+    assets = set(frame["asset_id"].astype(str))
+    if set(normalized) != assets:
+        raise PortfolioError(
+            "Initial weights must cover exactly the assets in the return dataset."
+        )
+
+    date_count = frame["timestamp"].nunique()
+    asset_count = frame["asset_id"].nunique()
+    if len(frame) != date_count * asset_count:
+        raise PortfolioError(
+            "Buy-and-hold returns must contain a complete timestamp/asset panel."
+        )
+
+    current_weights = dict(normalized)
+    rows: list[dict[str, object]] = []
+
+    for timestamp, group in frame.groupby("timestamp", sort=True):
+        returns_by_asset = dict(
+            zip(group["asset_id"].astype(str), group["return"].astype(float), strict=True)
+        )
+        if set(returns_by_asset) != assets:
+            raise PortfolioError(
+                f"Buy-and-hold return panel is incomplete at {timestamp}."
+            )
+
+        for asset_id in sorted(assets):
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "asset_id": asset_id,
+                    "weight": current_weights[asset_id],
+                }
+            )
+
+        portfolio_return = sum(
+            current_weights[asset_id] * returns_by_asset[asset_id]
+            for asset_id in assets
+        )
+        growth = 1.0 + portfolio_return
+        if not np.isfinite(growth) or growth <= 0.0:
+            raise PortfolioError(
+                "Buy-and-hold portfolio wealth must remain positive."
+            )
+
+        current_weights = {
+            asset_id: (
+                current_weights[asset_id]
+                * (1.0 + returns_by_asset[asset_id])
+                / growth
+            )
+            for asset_id in assets
+        }
+
+    return pd.DataFrame(rows).sort_values(
+        ["timestamp", "asset_id"]
     ).reset_index(drop=True)
 
 
