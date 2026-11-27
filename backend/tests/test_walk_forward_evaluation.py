@@ -8,6 +8,7 @@ from backend.app.research.evaluation.walk_forward_evaluation import (
     WalkForwardEvaluationError,
     evaluate_walk_forward_predictions,
 )
+from backend.app.research.evaluation.forecast_metrics import calculate_qlike
 
 
 def _predictions() -> pd.DataFrame:
@@ -64,3 +65,15 @@ def test_evaluation_requires_positive_realized_volatility_and_forecasts() -> Non
 
     with pytest.raises(WalkForwardEvaluationError, match="strictly positive"):
         evaluate_walk_forward_predictions(frame, n_bootstrap=100)
+
+
+
+def test_qlike_uses_variance_ratio_for_volatility_inputs() -> None:
+    actual_volatility = np.array([0.10, 0.20])
+    forecast_volatility = np.array([0.20, 0.10])
+    variance_ratio = np.square(actual_volatility / forecast_volatility)
+    expected = float(np.mean(variance_ratio - np.log(variance_ratio) - 1.0))
+
+    result = calculate_qlike(actual_volatility, forecast_volatility)
+
+    assert result == pytest.approx(expected)
