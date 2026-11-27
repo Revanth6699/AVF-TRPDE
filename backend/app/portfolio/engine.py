@@ -102,11 +102,9 @@ def execute_portfolio(
         else:
             history = historical.loc[historical.index < timestamp].tail(covariance_window)
             if len(history) < min_covariance_observations:
-                raise PortfolioExecutionError(
-                    f"Risk targeting at {timestamp} requires at least "
-                    f"{min_covariance_observations} prior complete return observations; "
-                    f"only {len(history)} are available."
-                )
+                # Do not backfill risk estimates with future observations. The
+                # strategy remains in cash until a strictly prior history exists.
+                continue
             corr = history.corr().to_numpy(dtype=float)
             if not np.isfinite(corr).all():
                 raise PortfolioExecutionError(
@@ -170,6 +168,11 @@ def execute_portfolio(
             current = proposed.copy()
         previous = proposed.copy()
 
+    if not return_rows:
+        raise PortfolioExecutionError(
+            "No portfolio observations were executable. Risk targeting requires at least "
+            f"{min_covariance_observations + 2} aligned dates to initialize and evaluate."
+        )
     position_frame = pd.DataFrame(position_rows)
     return_frame = pd.DataFrame(return_rows)
     performance = calculate_performance(return_frame["net_return"])
