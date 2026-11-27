@@ -1,5 +1,5 @@
 from __future__ import annotations
-import gzip, hashlib, json, os
+import gzip, hashlib, json, os, sys
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -8,6 +8,7 @@ import requests
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 DATA = ROOT / "data" / "real_market"
 OUT = ROOT / "validation_output"
 DATA.mkdir(parents=True, exist_ok=True)
@@ -88,7 +89,7 @@ def main():
     (DATA / "SOURCE_AND_ATTRIBUTION.md").write_text(
         "Source: community-maintained btc-cycle-data repository, pinned to commit " + COMMIT +
         ". The repository documents Bitstamp BTC/USD daily and hourly OHLCV and UTC timestamps. "
-        "Check the source repository license and attribution requirements before redistribution or commercial use. "
+        "Its README does not state a separate data license for this mirror; confirm terms with the maintainer before redistribution or commercial use. "
         "Files use AVF-TRPDE canonical columns: timestamp, asset_id, open, high, low, close, volume.\\n",
         encoding="utf-8",
     )
