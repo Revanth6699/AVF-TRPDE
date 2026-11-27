@@ -320,6 +320,11 @@ def prepare_research_dataset(
     grouped = daily.groupby("asset_id", sort=False)
     daily["target"] = grouped["realized_volatility"].shift(-1)
     daily["target_timestamp"] = grouped["timestamp"].shift(-1)
+    # The target volatility forecast at t is also the volatility scale
+    # for the return realized at target_timestamp (t+1). Retain that
+    # next-day return so FHS risk forecasts can be aligned without
+    # joining against a truncated supervised dataset.
+    daily["target_return"] = grouped["return"].shift(-1)
 
     numeric_columns = [
         "open", "high", "low", "close", "volume", "return",
