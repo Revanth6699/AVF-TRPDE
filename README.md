@@ -146,9 +146,11 @@ The exact package versions and installation requirements are maintained in the r
 
 ## Project Status
 
-The tail-risk engine, including VaR and Expected Shortfall functionality, is completed. Stress testing is also completed.
+**Backend status: research prototype; end-to-end validation is not complete.** Model and calculation modules exist for volatility forecasting, HMM regimes, evaluation, tail risk, portfolio analysis, and stress testing. However, the complete API workflow is not connected: forecast evaluation/comparison, risk backtesting/comparison, portfolio comparison, and report execution still contain unimplemented endpoints. The stress modules are not exposed as a complete API workflow. Do not treat the presence of these modules as proof that the corresponding end-to-end feature is operational.
 
-Other components should be considered complete only where their implementations and validation results support that status. The presence of a model module or a successful smoke test alone does not establish that the complete forecasting and portfolio workflow has been validated.
+The research data resolver now distinguishes daily OHLCV from intraday OHLCV. Daily bars provide end-of-day features; intraday bars provide realized variance. A daily dataset must be paired with an overlapping intraday dataset to create next-trading-day realized-volatility labels. Intraday input is aggregated to one OHLCV row per asset and trading day before walk-forward evaluation. Provider history, overlap, data quality, and runtime behavior still require environment-specific verification.
+
+The repository does not currently contain the full eight-year daily / three-year intraday research dataset. No empirical performance or risk conclusion is claimed.
 
 ## Running the Project
 
@@ -177,14 +179,28 @@ On macOS or Linux:
 source .venv/bin/activate
 ```
 
-Install the dependencies listed in the repository:
+Install the backend and research dependencies:
 
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Run the project's configured entry point using the instructions and arguments supported by the current implementation.
+Copy `.env.example` to `.env` and set `TWELVE_DATA_API_KEY` only when using the Twelve Data provider. CSV and Parquet workflows do not require a provider key. Keep `.env` out of version control.
+
+Run the API from the repository root:
+
+```bash
+uvicorn backend.app.main:app --reload
+```
+
+Run the isolated automated tests:
+
+```bash
+pytest
+```
+
+The live Twelve Data smoke tests in `backend/tests/test_data_download.py` require a valid provider key and are skipped when it is absent. The other legacy research smoke scripts are not collected by pytest.
 
 The exact execution command depends on the repository's current runner, configuration, and data requirements. Do not assume that installing the dependencies alone makes every model or data pipeline ready to execute.
 
