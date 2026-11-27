@@ -176,106 +176,90 @@ def apply_turnover_limit(
     max_turnover: float,
 ) -> pd.DataFrame:
     """
-    Apply a portfolio turnover constraint.
+    Apply a gross-turnover limit to one portfolio rebalance.
 
-    If the proposed turnover is within the limit, weights are
-    returned unchanged.
-
-    If turnover exceeds the limit, the change from previous
-    weights is scaled proportionally so that total turnover
-    equals max_turnover.
-
-    This is a mathematical constraint projection, not a
-    rule-based trading strategy.
+    The union of current and previous assets is retained. An asset omitted
+    from the proposed weights is treated as a proposed zero position, so
+    liquidations are included in the turnover calculation.
     """
-
     _validate_weights_input(current_weights)
     _validate_max_turnover(max_turnover)
 
+    current = current_weights.loc[
+        :, ["timestamp", "asset_id", "target_weight"]
+    ].copy()
+    current["timestamp"] = pd.to_datetime(current["timestamp"], errors="coerce")
+    if current["timestamp"].nunique() != 1:
+        raise ConstraintError(
+            "apply_turnover_limit requires weights for exactly one timestamp."
+        )
+    timestamp = current["timestamp"].iloc[0]
+    current["asset_id"] = (
+        current["asset_id"].astype("string").str.strip().str.upper()
+    )
+    current["target_weight"] = pd.to_numeric(
+        current["target_weight"], errors="coerce"
+    )
+
+    current_grouped = (
+        current.groupby("asset_id", as_index=False)["target_weight"]
+        .sum()
+        .rename(columns={"target_weight": "current_weight"})
+    )
+
     if previous_weights is None:
-        previous = pd.DataFrame(
-            {
-                "asset_id": current_weights["asset_id"].astype("string"),
-                "target_weight": 0.0,
-            }
+        previous_grouped = pd.DataFrame(
+            columns=["asset_id", "previous_weight"]
         )
     else:
         _validate_weights_input(
             previous_weights,
             require_timestamp=False,
         )
-
         previous = previous_weights.loc[
-            :,
-            ["asset_id", "target_weight"],
+            :, ["asset_id", "target_weight"]
         ].copy()
-
-    result = current_weights.copy()
-
-    result["asset_id"] = result["asset_id"].astype("string")
-    previous["asset_id"] = previous["asset_id"].astype("string")
-
-    result["target_weight"] = pd.to_numeric(
-        result["target_weight"],
-        errors="coerce",
-    )
-
-    previous["target_weight"] = pd.to_numeric(
-        previous["target_weight"],
-        errors="coerce",
-    )
-
-    if result["target_weight"].isna().any():
-        raise ConstraintError(
-            "current_weights contains invalid target_weight values."
+        previous["asset_id"] = (
+            previous["asset_id"].astype("string").str.strip().str.upper()
+        )
+        previous["target_weight"] = pd.to_numeric(
+            previous["target_weight"], errors="coerce"
+        )
+        previous_grouped = (
+            previous.groupby("asset_id", as_index=False)["target_weight"]
+            .sum()
+            .rename(columns={"target_weight": "previous_weight"})
         )
 
-    if previous["target_weight"].isna().any():
-        raise ConstraintError(
-            "previous_weights contains invalid target_weight values."
-        )
-
-    previous_grouped = (
-        previous.groupby("asset_id", as_index=False)["target_weight"]
-        .sum()
-        .rename(columns={"target_weight": "previous_weight"})
-    )
-
-    result = result.merge(
+    merged = current_grouped.merge(
         previous_grouped,
         on="asset_id",
-        how="left",
+        how="outer",
+        validate="one_to_one",
+    ).fillna(
+        {"current_weight": 0.0, "previous_weight": 0.0}
     )
-
-    result["previous_weight"] = result[
-        "previous_weight"
-    ].fillna(0.0)
 
     proposed_change = (
-        result["target_weight"]
-        - result["previous_weight"]
+        merged["current_weight"] - merged["previous_weight"]
     )
+    proposed_turnover = float(np.abs(proposed_change).sum())
 
-    proposed_turnover = float(
-        np.abs(proposed_change).sum()
+    if proposed_turnover > max_turnover and proposed_turnover > 0.0:
+        scale = max_turnover / proposed_turnover
+    else:
+        scale = 1.0
+
+    merged["target_weight"] = (
+        merged["previous_weight"] + proposed_change * scale
     )
+    merged["timestamp"] = timestamp
 
-    if proposed_turnover > max_turnover:
-        if proposed_turnover <= 0.0:
-            scale = 0.0
-        else:
-            scale = max_turnover / proposed_turnover
-
-        result["target_weight"] = (
-            result["previous_weight"]
-            + proposed_change * scale
-        )
-
-    result = result.drop(
-        columns=["previous_weight"],
+    return (
+        merged.loc[:, ["timestamp", "asset_id", "target_weight"]]
+        .sort_values(["timestamp", "asset_id"])
+        .reset_index(drop=True)
     )
-
-    return result
 
 
 def apply_constraints(
