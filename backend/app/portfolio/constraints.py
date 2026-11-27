@@ -231,6 +231,13 @@ def apply_turnover_limit(
             previous_weights,
             require_timestamp=False,
         )
+        if (
+            "timestamp" in previous_weights.columns
+            and previous_weights["timestamp"].nunique() > 1
+        ):
+            raise ConstraintError(
+                "previous_weights must represent a single portfolio snapshot."
+            )
         previous = previous_weights.loc[
             :, ["asset_id", "target_weight"]
         ].copy()
