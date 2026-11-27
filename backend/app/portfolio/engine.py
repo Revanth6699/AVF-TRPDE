@@ -124,9 +124,16 @@ def execute_portfolio(
                 )
             proposed = base * (volatility_target / estimated_risk)
 
-        proposed = np.clip(proposed, -max_position, max_position)
+        if strategy == "buy_and_hold":
+            if np.any(np.abs(proposed) > max_position + 1e-12):
+                raise PortfolioExecutionError(
+                    f"Buy-and-hold weight drift breaches max_position at {timestamp}; "
+                    "the position cap cannot be restored without rebalancing."
+                )
+        else:
+            proposed = np.clip(proposed, -max_position, max_position)
         proposed_turnover = float(np.abs(proposed - previous).sum())
-        if proposed_turnover > max_turnover and proposed_turnover > 0:
+        if strategy != "buy_and_hold" and proposed_turnover > max_turnover and proposed_turnover > 0:
             proposed = previous + (proposed - previous) * (max_turnover / proposed_turnover)
         turnover = float(np.abs(proposed - previous).sum())
         day_returns = returns_matrix.loc[timestamp, assets].to_numpy(dtype=float)
