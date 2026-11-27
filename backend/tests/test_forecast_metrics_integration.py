@@ -195,9 +195,7 @@ def main() -> None:
 
     expected_qlike = float(
         np.mean(
-            (
-                actual / forecast
-            )
+            np.square(actual / forecast)
             -
             np.log(
                 actual / forecast
