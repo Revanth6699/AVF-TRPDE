@@ -10,10 +10,7 @@ from backend.app.experiments.artifacts import (
 )
 from backend.app.risk.christoffersen import christoffersen_test
 from backend.app.risk.kupiec import kupiec_unconditional_coverage
-from backend.app.risk.pipeline import (
-    RiskPipelineError,
-    calculate_fhs_risk_points,
-)
+from backend.app.risk.pipeline import calculate_fhs_risk_points
 from backend.app.schemas.risk import (
     RiskBacktestResponse,
     RiskBacktestResult,
@@ -238,7 +235,7 @@ def create_risk_analysis(
             n_simulations=DEFAULT_FHS_SIMULATIONS,
             random_state=DEFAULT_FHS_RANDOM_STATE,
         )
-    except RiskPipelineError as exc:
+    except ValueError as exc:
         message = str(exc)
         code = (
             status.HTTP_409_CONFLICT
