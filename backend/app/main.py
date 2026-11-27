@@ -9,6 +9,7 @@ from backend.app.api.v1.forecasts import router as forecasts_router
 from backend.app.api.v1.risk import router as risk_router
 from backend.app.api.v1.portfolios import router as portfolios_router
 from backend.app.api.v1.reports import router as reports_router
+from backend.app.api.v1.stress import router as stress_router
 
 
 app = FastAPI(
@@ -39,6 +40,7 @@ app.include_router(forecasts_router)
 app.include_router(risk_router)
 app.include_router(portfolios_router)
 app.include_router(reports_router)
+app.include_router(stress_router)
 
 
 @app.get("/health", tags=["System"])
