@@ -176,9 +176,14 @@ def calculate_portfolio_returns(
         errors="coerce",
     )
 
-    if portfolio["portfolio_return"].isna().any():
+    portfolio_values = portfolio["portfolio_return"].to_numpy(dtype=float)
+    if not np.isfinite(portfolio_values).all():
         raise PortfolioError(
-            "Portfolio return calculation produced invalid values."
+            "Portfolio return calculation produced non-finite values."
+        )
+    if (portfolio_values <= -1.0).any():
+        raise PortfolioError(
+            "Portfolio simple returns must be greater than -100%."
         )
 
     return PortfolioResult(
