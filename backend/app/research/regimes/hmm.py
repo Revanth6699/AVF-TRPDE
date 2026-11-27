@@ -112,64 +112,20 @@ class HMMRegimeDetector:
             values
         )
 
-        # Gaussian HMM likelihood optimization is sensitive to local
-        # initialization, especially with full covariance matrices and
-        # short walk-forward windows. Use deterministic training-only
-        # restarts and retain the highest-likelihood numerically valid fit.
-        # No validation/test observations participate in model selection.
-        best_model: GaussianHMM | None = None
-        best_log_likelihood = -np.inf
-        failures: list[str] = []
-
-        for restart in range(5):
-            candidate = GaussianHMM(
-                n_components=self.config.n_components,
-                covariance_type=self.config.covariance_type,
-                n_iter=self.config.n_iter,
-                tol=self.config.tol,
-                random_state=self.config.random_state + restart,
-                min_covar=self.config.min_covar,
+        try:
+            self._model.fit(
+                scaled_values
             )
-            try:
-                candidate.fit(scaled_values)
-                self._model = candidate
-
-                history = np.asarray(
-                    list(getattr(candidate.monitor_, "history", ())),
-                    dtype=float,
-                )
-                if history.size < 2 or not np.isfinite(history).all():
-                    raise HMMError("HMM optimizer returned an invalid likelihood history.")
-
-                final_delta = float(history[-1] - history[-2])
-                monotonicity_tolerance = max(float(self.config.tol) * 10.0, 1e-8)
-                if final_delta < -monotonicity_tolerance:
-                    raise HMMError(
-                        "HMM EM likelihood decreased materially on the final iteration."
-                    )
-                if final_delta >= self.config.tol:
-                    raise HMMError("HMM optimizer did not reach the configured convergence tolerance.")
-
-                self._regularize_fitted_covariances()
-                self._validate_fitted_covariances()
-                log_likelihood = float(candidate.score(scaled_values))
-                if not np.isfinite(log_likelihood):
-                    raise HMMError("HMM training log-likelihood is non-finite.")
-
-                if log_likelihood > best_log_likelihood:
-                    best_log_likelihood = log_likelihood
-                    best_model = candidate
-            except Exception as exc:
-                failures.append(f"restart {restart + 1}: {exc}")
-
-        if best_model is None:
-            details = "; ".join(failures[-5:])
+        except Exception as exc:
             raise HMMError(
-                "HMM failed to produce a converged, positive-definite fit "
-                f"after 5 deterministic training-only restarts. {details}"
+                f"HMM fitting failed: {exc}"
+            ) from exc
+
+        if not self._model.monitor_.converged:
+            raise HMMError(
+                "HMM optimizer did not converge."
             )
 
-        self._model = best_model
         self._regularize_fitted_covariances()
         self._validate_fitted_covariances()
 
