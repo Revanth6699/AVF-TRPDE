@@ -453,51 +453,72 @@ def _execute_research(
     predictions: list[Any] = []
     model_results: dict[str, Any] = {}
 
-    for model in requested_models:
-        if model == "HMM":
-            continue
-
-        if model not in SUPPORTED_RESEARCH_MODELS:
+    requested_ablations = parameters.get("ablations")
+    if requested_ablations is not None:
+        if not isinstance(requested_ablations, (list, tuple)) or not requested_ablations:
             raise ValueError(
-                f"Unsupported research model: {model}"
+                "Parameter 'ablations' must be a non-empty list containing "
+                "one or more of A0, A1, A2, and A3."
             )
 
-        result = runner.run_model(
-            research_dataframe,
-            model=model,
-            target_column="target",
-            ewma_decay=model_parameters[
-                "ewma_decay"
-            ],
-            hmm_config=model_parameters[
-                "hmm_config"
-            ],
-            xgboost_config=model_parameters[
-                "xgboost_config"
-            ],
-            feature_columns=feature_columns,
-        )
+        ablation_names = tuple(str(name).strip().upper() for name in requested_ablations)
+        supported_ablations = {"A0", "A1", "A2", "A3"}
+        unsupported_ablations = sorted(set(ablation_names) - supported_ablations)
+        if unsupported_ablations:
+            raise ValueError(
+                "Unsupported ablation names: " + ", ".join(unsupported_ablations)
+            )
+        if len(set(ablation_names)) != len(ablation_names):
+            raise ValueError("Parameter 'ablations' must not contain duplicates.")
 
-        model_predictions = (
-            result.predictions.copy()
-        )
+        for ablation_name in ablation_names:
+            ablation_result = runner.run_ablation(
+                research_dataframe,
+                ablation=ablation_name,
+                target_column="target",
+                hmm_config=model_parameters["hmm_config"],
+                xgboost_config=model_parameters["xgboost_config"],
+                feature_columns=feature_columns,
+            )
+            ablation_predictions = ablation_result.predictions.copy()
+            ablation_predictions["model"] = ablation_name
+            predictions.append(ablation_predictions)
+            model_results[ablation_name] = {
+                "description": ablation_result.description,
+                "fold_count": ablation_result.fold_count,
+                "prediction_count": ablation_result.prediction_count,
+            }
+    else:
+        for model in requested_models:
+            if model == "HMM":
+                continue
 
-        model_predictions["model"] = model
+            if model not in SUPPORTED_RESEARCH_MODELS:
+                raise ValueError(
+                    f"Unsupported research model: {model}"
+                )
 
-        predictions.append(
-            model_predictions
-        )
+            result = runner.run_model(
+                research_dataframe,
+                model=model,
+                target_column="target",
+                ewma_decay=model_parameters["ewma_decay"],
+                hmm_config=model_parameters["hmm_config"],
+                xgboost_config=model_parameters["xgboost_config"],
+                feature_columns=feature_columns,
+            )
 
-        model_results[model] = {
-            "fold_count": result.fold_count,
-            "prediction_count": (
-                result.prediction_count
-            ),
-        }
+            model_predictions = result.predictions.copy()
+            model_predictions["model"] = model
+            predictions.append(model_predictions)
+            model_results[model] = {
+                "fold_count": result.fold_count,
+                "prediction_count": result.prediction_count,
+            }
 
     if not predictions:
         raise ValueError(
-            "No executable forecasting models were "
+            "No executable forecasting models or ablations were "
             "requested by the experiment."
         )
 
@@ -549,6 +570,11 @@ def _execute_research(
         "models_executed": list(
             model_results.keys()
         ),
+        "ablations_requested": (
+            list(ablation_names)
+            if requested_ablations is not None
+            else []
+        ),
         "research_rows": len(
             research_dataframe
         ),
@@ -585,6 +611,11 @@ def _execute_research(
         ),
         "models_executed": list(
             model_results.keys()
+        ),
+        "ablations_executed": (
+            list(ablation_names)
+            if requested_ablations is not None
+            else []
         ),
         "model_results": model_results,
         "evaluation": evaluation,
